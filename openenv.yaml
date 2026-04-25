@@ -1,0 +1,92 @@
+name: ConflictBenchEnv
+version: "1.0.0"
+description: >
+  An instruction priority resolution environment for training LLMs to
+  navigate conflicting business directives. The agent receives a realistic
+  document containing 8-28 instructions from stakeholders of varying authority
+  levels. Conflicts are programmatically injected and deterministically scored.
+  Targets Theme 2 (Long-Horizon Instruction Following) and the Scale AI
+  sub-theme bonus (non-code enterprise workflows).
+
+authors:
+  - Harsh Jain
+
+theme: Long-Horizon Planning & Instruction Following
+sub_theme: Scale AI — Long-Horizon Workflows for Business Settings
+
+entry_point: conflict_bench.py
+class_name: ConflictBenchEnv
+
+tags:
+  - instruction-following
+  - conflict-resolution
+  - long-horizon
+  - enterprise
+  - business-workflows
+  - grpo
+  - verifiable-reward
+
+observation_space:
+  type: text
+  description: >
+    A formatted instruction document containing business directives from
+    multiple stakeholders with varying authority levels. Some directives
+    conflict with others. The agent must read and reason over the full document.
+
+action_space:
+  type: text
+  description: >
+    A JSON object with three fields: identified_conflicts (list of conflict
+    pairs with resolutions), execution_plan (ordered list of instruction IDs
+    to follow), and overridden_instructions (list of instruction IDs to skip).
+
+reward_range: [0.0, 1.0]
+
+reward_rubrics:
+  - name: correct_final_state
+    weight: 0.35
+    description: F1 score comparing agent's execution plan to ground truth
+  - name: no_contradictions
+    weight: 0.25
+    description: Penalizes conflicting actions co-existing in the execution plan
+  - name: conflict_identification
+    weight: 0.20
+    description: F1 score on identified conflict pairs + resolution accuracy bonus
+  - name: efficiency
+    weight: 0.10
+    description: Penalizes unnecessary instructions in the plan
+  - name: format_compliance
+    weight: 0.10
+    description: Valid JSON with required structure
+
+difficulty_levels:
+  - level: 1
+    conflicts: 2
+    total_instructions: "~8-12"
+  - level: 2
+    conflicts: 4
+    total_instructions: "~16-20"
+  - level: 3
+    conflicts: 6
+    total_instructions: "~22-28"
+
+episode_type: single_step
+
+training_framework:
+  - Unsloth
+  - TRL (GRPOTrainer)
+
+base_model: Qwen/Qwen2.5-3B-Instruct
+
+hardware_tested:
+  - Google Colab T4
+  - NVIDIA RTX 4060 8GB (Windows 11)
+
+dependencies:
+  - openenv-core
+  - unsloth
+  - trl>=0.12.0
+  - transformers>=4.45.0
+  - datasets
+  - gradio
+  - torch>=2.1.0
