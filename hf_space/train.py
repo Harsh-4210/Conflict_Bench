@@ -61,11 +61,15 @@ def detect_gpu_config():
     vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
     log.info(f"GPU: {torch.cuda.get_device_name(0)} | VRAM: {vram_gb:.1f}GB")
 
+    import torch as _torch
+    compute_dtype = _torch.bfloat16 if _torch.cuda.is_bf16_supported() else _torch.float16
+
     config = {
         "model_name": "unsloth/Qwen2.5-3B-Instruct-bnb-4bit",
         "load_in_4bit": True,
         "batch_size": 1, "gradient_accumulation": 8,
         "num_generations": 4, "lora_r": 32,
+        "dtype": compute_dtype,
     }
     if vram_gb >= 40:
         config.update({"model_name": "unsloth/Qwen2.5-3B-Instruct",
@@ -266,7 +270,8 @@ def run_training(progress_callback=None):
     from transformers import TrainerCallback
 
     gpu_config = detect_gpu_config()
-    emit(f"🖥️ GPU config: {json.dumps(gpu_config, indent=2)}")
+    loggable = {k: str(v) if k == "dtype" else v for k, v in gpu_config.items()}
+    emit(f"🖥️ GPU config: {json.dumps(loggable, indent=2)}")
 
     # Load model
     emit(f"📦 Loading model: {gpu_config['model_name']}...")
@@ -274,7 +279,7 @@ def run_training(progress_callback=None):
         model_name=gpu_config["model_name"],
         max_seq_length=MAX_SEQ_LENGTH,
         load_in_4bit=gpu_config["load_in_4bit"],
-        dtype=None,
+        dtype=gpu_config["dtype"],
     )
 
     model = FastLanguageModel.get_peft_model(
@@ -283,7 +288,16 @@ def run_training(progress_callback=None):
         lora_alpha=gpu_config["lora_r"], lora_dropout=0.0, bias="none",
         use_gradient_checkpointing="unsloth", random_state=SEED,
     )
-    emit("✅ Model loaded with LoRA")
+
+    # PEFT initializes LoRA A/B in float32; unsloth's fast LoRA kernel expects them
+    # in the model's compute dtype. Force the cast to avoid a Half/Float addmm_ mismatch.
+    lora_dtype = gpu_config["dtype"]
+    cast_count = 0
+    for name, param in model.named_parameters():
+        if "lora_" in name and param.dtype != lora_dtype:
+            param.data = param.data.to(lora_dtype)
+            cast_count += 1
+    emit(f"✅ Model loaded with LoRA (cast {cast_count} LoRA params to {lora_dtype})")
 
     # Dataset
     emit("📊 Building datasets...")
@@ -317,7 +331,8 @@ def run_training(progress_callback=None):
         temperature=1.0, top_p=0.95,
         logging_steps=LOGGING_STEPS, save_steps=SAVE_STEPS,
         eval_strategy="steps", eval_steps=EVAL_STEPS,
-        fp16=not torch.cuda.is_bf16_supported(), bf16=torch.cuda.is_bf16_supported(),
+        fp16=(gpu_config["dtype"] == torch.float16),
+        bf16=(gpu_config["dtype"] == torch.bfloat16),
         report_to=_report_to,
         seed=SEED, dataloader_num_workers=2, beta=BETA,
         save_total_limit=5,
