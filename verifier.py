@@ -160,15 +160,18 @@ def rubric_no_contradictions(output: AgentOutput, scenario: Scenario) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Rubric 3 — Conflict identification accuracy
-# Did the agent correctly identify which instruction pairs conflict?
-# Weight: 0.20
+# Rubric 3 — Conflict identification + resolution accuracy
+# Two-part score: 60% pair identification F1, 40% resolution accuracy.
+# Weight: 0.30
 # ---------------------------------------------------------------------------
 
 def rubric_conflict_identification(output: AgentOutput, scenario: Scenario) -> float:
     """
-    F1 score on conflict pair identification.
-    A conflict is a frozenset of two instruction IDs — order doesn't matter.
+    Two-part weighted score:
+      60% — F1 on conflict pair identification (frozenset of two IDs)
+      40% — Resolution accuracy (correct winner / matched pairs)
+
+    Wrong winner now directly reduces the score instead of just missing a bonus.
     """
     if not output.parsed_ok:
         return 0.0
@@ -186,6 +189,7 @@ def rubric_conflict_identification(output: AgentOutput, scenario: Scenario) -> f
     if not gt_conflict_pairs and not agent_conflict_pairs:
         return 1.0
 
+    # --- Part 1: Pair identification F1 (60% of score) ---
     tp = len(gt_conflict_pairs & agent_conflict_pairs)
     fp = len(agent_conflict_pairs - gt_conflict_pairs)
     fn = len(gt_conflict_pairs - agent_conflict_pairs)
@@ -198,9 +202,7 @@ def rubric_conflict_identification(output: AgentOutput, scenario: Scenario) -> f
 
     f1 = 2 * precision * recall / (precision + recall)
 
-    # Bonus: correct resolution pick within identified conflicts
-    resolution_bonus = 0.0
-    correctly_resolved = 0
+    # --- Part 2: Resolution accuracy (40% of score) ---
     agent_conflict_map = {}
     for c in output.identified_conflicts:
         if "instruction_a" in c and "instruction_b" in c and "resolution" in c:
@@ -213,14 +215,18 @@ def rubric_conflict_identification(output: AgentOutput, scenario: Scenario) -> f
     }
 
     matched_pairs = gt_conflict_pairs & agent_conflict_pairs
-    for pair in matched_pairs:
-        if agent_conflict_map.get(pair) == gt_resolution_map.get(pair):
-            correctly_resolved += 1
-
     if matched_pairs:
-        resolution_bonus = 0.15 * (correctly_resolved / len(matched_pairs))
+        correctly_resolved = sum(
+            1 for pair in matched_pairs
+            if agent_conflict_map.get(pair) == gt_resolution_map.get(pair)
+        )
+        resolution_accuracy = correctly_resolved / len(matched_pairs)
+    else:
+        resolution_accuracy = 0.0
 
-    return round(min(1.0, f1 + resolution_bonus), 4)
+    # Combine: 60% pair F1 + 40% resolution accuracy
+    score = 0.60 * f1 + 0.40 * resolution_accuracy
+    return round(score, 4)
 
 
 # ---------------------------------------------------------------------------
@@ -292,10 +298,10 @@ def rubric_format_compliance(output: AgentOutput, scenario: Scenario) -> float:
 
 RUBRIC_WEIGHTS = {
     "correct_final_state":    0.35,
-    "no_contradictions":      0.25,
-    "conflict_identification": 0.20,
-    "efficiency":             0.10,
-    "format_compliance":      0.10,
+    "no_contradictions":      0.15,
+    "conflict_identification": 0.30,
+    "efficiency":             0.08,
+    "format_compliance":      0.12,
 }
 
 

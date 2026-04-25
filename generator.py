@@ -54,24 +54,24 @@ class Scenario:
 # ---------------------------------------------------------------------------
 
 SOURCE_PRIORITY = {
-    "Legal & Compliance":    1,
-    "Regulatory Affairs":    1,
-    "CEO Office":            2,
-    "Chief Financial Officer": 2,
-    "Chief Technology Officer": 2,
-    "Chief Operating Officer": 2,
-    "VP Engineering":        3,
-    "VP Finance":            3,
-    "VP Operations":         3,
-    "VP Human Resources":    3,
-    "Director of IT":        3,
-    "Director of Finance":   3,
-    "Engineering Manager":   4,
-    "Finance Manager":       4,
-    "HR Manager":            4,
-    "IT Manager":            4,
-    "Team Lead":             5,
-    "Department Coordinator": 5,
+    "Legal & Compliance":      1,
+    "Regulatory Affairs":      1,
+    "CEO Office":              2,
+    "Chief Financial Officer":  2,
+    "Chief Technology Officer":  2,
+    "Chief Operating Officer":  2,
+    "VP Engineering":          3,
+    "VP Finance":              3,
+    "VP Operations":           3,
+    "VP Human Resources":      3,
+    "Director of IT":          4,
+    "Director of Finance":     4,
+    "Engineering Manager":     5,
+    "Finance Manager":         5,
+    "HR Manager":              5,
+    "IT Manager":              5,
+    "Team Lead":               6,
+    "Department Coordinator":  6,
 }
 
 # ---------------------------------------------------------------------------
@@ -441,7 +441,8 @@ class ScenarioGenerator:
     ) -> Tuple[Instruction, Instruction, ConflictPair]:
         """
         Generate one conflict pair from a template group.
-        Always picks two templates with DIFFERENT action_values.
+        Always picks two templates with DIFFERENT action_values and
+        DIFFERENT source priorities (no ties — every conflict has a clear winner).
         Returns (winner_instruction, loser_instruction, conflict_pair).
         """
         group = TEMPLATE_GROUPS[group_key]
@@ -451,13 +452,18 @@ class ScenarioGenerator:
         t_a = templates[0]
         t_b = templates[1]
 
-        instr_a = self._make_instruction(group_key, t_a, existing_ids)
+        # Retry until we get sources with different priority tiers
+        for _ in range(20):
+            instr_a = self._make_instruction(group_key, t_a, existing_ids)
+            instr_b = self._make_instruction(group_key, t_b, existing_ids)
+            if instr_a.source_priority != instr_b.source_priority:
+                break
+        # After retry loop, IDs are committed
         existing_ids.add(instr_a.id)
-        instr_b = self._make_instruction(group_key, t_b, existing_ids)
         existing_ids.add(instr_b.id)
 
-        # Resolve: lower priority number = higher authority = wins
-        if instr_a.source_priority <= instr_b.source_priority:
+        # Resolve: strictly lower priority number = higher authority = wins
+        if instr_a.source_priority < instr_b.source_priority:
             winner, loser = instr_a, instr_b
         else:
             winner, loser = instr_b, instr_a
@@ -510,7 +516,16 @@ class ScenarioGenerator:
             )
         instruction_block = "\n\n".join(instruction_lines)
 
-        prompt = f"""You are a business operations coordinator. Resolve instruction conflicts using authority hierarchy: Legal/Regulatory (highest) > CEO/CFO/CTO/COO > VP-level > Director/Manager > Team Lead (lowest).
+        prompt = f"""You are a business operations coordinator. Resolve instruction conflicts using the authority hierarchy below.
+
+AUTHORITY HIERARCHY (lower number = higher authority):
+1. Legal & Compliance, Regulatory Affairs
+2. CEO Office, CFO, CTO, COO
+3. VP Engineering, VP Finance, VP Operations, VP Human Resources
+4. Director of IT, Director of Finance
+5. Engineering Manager, Finance Manager, HR Manager, IT Manager
+6. Team Lead, Department Coordinator
+When two instructions conflict, the one from the higher-authority source (lower tier number) ALWAYS wins.
 
 CONTEXT: {context}
 
@@ -563,7 +578,7 @@ Output ONLY a JSON object. No preamble, no explanation outside the JSON. Keep "r
 
         # Add non-conflicting filler instructions (makes scenario realistic)
         used_keys = set(conflict_groups)
-        filler_count = random.randint(4, 8)
+        filler_count = random.randint(2, 4)
         fillers = self._generate_filler_instructions(filler_count, existing_ids, used_keys)
         all_instructions.extend(fillers)
         ground_truth_followed.extend([f.id for f in fillers])
