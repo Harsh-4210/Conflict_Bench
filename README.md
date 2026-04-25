@@ -1,3 +1,13 @@
+---
+title: ConflictBench
+emoji: ⚔️
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+sdk_version: 4.36.0
+app_file: app.py
+pinned: false
+---
 # ConflictBench — Instruction Priority Resolution Environment
 
 > **OpenEnv Hackathon India 2026** | Theme 2: Long-Horizon Instruction Following | Scale AI Sub-theme Bonus
