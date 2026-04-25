@@ -95,7 +95,8 @@ def format_score_html(breakdown_dict: dict) -> str:
     for k, label in rubric_labels.items():
         v = breakdown_dict.get(k, 0.0)
         pct = int(v * 100)
-        color = "#10b981" if pct == 100 else ("#f59e0b" if pct > 0 else "#ef4444")
+        # Muted enterprise colors
+        color = "#0ea5e9" if pct == 100 else ("#64748b" if pct > 0 else "#3f3f46")
         html += f'''
         <div class="score-row">
             <div class="score-label">{label}</div>
@@ -108,14 +109,15 @@ def format_score_html(breakdown_dict: dict) -> str:
     
     composite = breakdown_dict.get("composite", 0.0)
     comp_pct = int(composite * 100)
-    comp_color = "#3b82f6" if comp_pct > 80 else ("#f59e0b" if comp_pct > 40 else "#ef4444")
+    # Sleek highlight for composite
+    comp_color = "#38bdf8" if comp_pct > 80 else ("#94a3b8" if comp_pct > 40 else "#52525b")
     html += f'''
         <div class="score-row composite-row">
-            <div class="score-label" style="font-weight: bold;">Composite Score</div>
-            <div class="score-bar-bg" style="height: 12px;">
-                <div class="score-bar-fill" style="width: {comp_pct}%; background-color: {comp_color}; height: 12px;"></div>
+            <div class="score-label" style="font-weight: 500; color: #f8fafc;">Composite Score</div>
+            <div class="score-bar-bg" style="height: 6px;">
+                <div class="score-bar-fill" style="width: {comp_pct}%; background-color: {comp_color};"></div>
             </div>
-            <div class="score-value" style="font-weight: bold;">{composite:.3f}</div>
+            <div class="score-value" style="font-weight: 500; color: #f8fafc;">{composite:.3f}</div>
         </div>
     </div>
     '''
@@ -126,32 +128,32 @@ def format_json_html(raw: str) -> str:
     """Renders the parsed JSON into a beautiful HTML card format."""
     parsed = parse_agent_output(raw)
     if parsed is None:
-        return f'<div class="error-box"><strong>Failed to parse JSON.</strong> Raw output:<br><pre>{raw}</pre></div>'
+        return f'<div class="error-box"><strong>Failed to parse output.</strong><br><pre class="raw-pre">{raw}</pre></div>'
     
     html = '<div class="json-visualizer">'
     
     # Execution Plan
-    html += '<div class="card"><div class="card-title">🚀 Execution Plan</div><ul class="instruction-list">'
+    html += '<div class="glass-card"><div class="glass-card-title">Execution Plan</div><ul class="instruction-list">'
     if not parsed["execution_plan"]:
-        html += '<li><em>None</em></li>'
+        html += '<li><span class="muted-text">None</span></li>'
     else:
         for ins in parsed["execution_plan"]:
             html += f'<li><span class="ins-badge accept">{ins}</span></li>'
     html += '</ul></div>'
     
     # Overridden
-    html += '<div class="card"><div class="card-title">🚫 Overridden Instructions</div><ul class="instruction-list">'
+    html += '<div class="glass-card"><div class="glass-card-title">Overridden Instructions</div><ul class="instruction-list">'
     if not parsed["overridden_instructions"]:
-        html += '<li><em>None</em></li>'
+        html += '<li><span class="muted-text">None</span></li>'
     else:
         for ins in parsed["overridden_instructions"]:
             html += f'<li><span class="ins-badge reject">{ins}</span></li>'
     html += '</ul></div>'
     
     # Conflicts
-    html += '<div class="card"><div class="card-title">⚔️ Identified Conflicts</div>'
+    html += '<div class="glass-card"><div class="glass-card-title">Identified Conflicts</div>'
     if not parsed["identified_conflicts"]:
-        html += '<em>No conflicts identified.</em>'
+        html += '<span class="muted-text">No conflicts identified.</span>'
     else:
         for c in parsed["identified_conflicts"]:
             res = c.get("resolution", "UNKNOWN")
@@ -236,31 +238,44 @@ def show_ground_truth(scenario):
 # ---------------------------------------------------------------------------
 
 custom_css = """
-/* Glassmorphic & Modern Dark Theme Elements */
-body { font-family: 'Inter', 'Segoe UI', sans-serif; }
-.score-container { background: #1f2937; padding: 15px; border-radius: 8px; border: 1px solid #374151; margin-top: 10px; }
-.score-row { display: flex; align-items: center; margin-bottom: 8px; font-size: 14px; color: #e5e7eb; }
-.score-label { width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.score-bar-bg { flex-grow: 1; background: #374151; height: 8px; border-radius: 4px; margin: 0 15px; overflow: hidden; }
-.score-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease-in-out; }
-.score-value { width: 40px; text-align: right; font-family: monospace; }
-.composite-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid #4b5563; }
+/* Enterprise Glassmorphism Theme */
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #09090b !important; color: #e4e4e7; }
+.gradio-container { background-color: transparent !important; }
 
-.json-visualizer { font-family: 'Inter', sans-serif; font-size: 14px; color: #d1d5db; }
-.card { background: #111827; border: 1px solid #374151; border-radius: 8px; padding: 15px; margin-bottom: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-.card-title { font-size: 16px; font-weight: 600; margin-bottom: 10px; color: #f9fafb; border-bottom: 1px solid #374151; padding-bottom: 5px; }
+/* Score Bars */
+.score-container { background: rgba(24, 24, 27, 0.4); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 10px; box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.2); }
+.score-row { display: flex; align-items: center; margin-bottom: 10px; font-size: 13px; color: #a1a1aa; }
+.score-label { width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.2px; }
+.score-bar-bg { flex-grow: 1; background: rgba(255, 255, 255, 0.05); height: 4px; border-radius: 2px; margin: 0 16px; overflow: hidden; }
+.score-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+.score-value { width: 36px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.composite-row { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+
+/* Glass Cards for JSON */
+.json-visualizer { font-family: 'Inter', sans-serif; font-size: 13px; }
+.glass-card { background: rgba(24, 24, 27, 0.5); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); }
+.glass-card-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 12px; color: #a1a1aa; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 8px; }
+.muted-text { color: #52525b; font-style: italic; }
+
+/* Badges */
 .instruction-list { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-.ins-badge { padding: 4px 8px; border-radius: 6px; font-family: monospace; font-size: 12px; font-weight: bold; }
-.ins-badge.accept { background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #34d399; }
-.ins-badge.reject { background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #f87171; }
-.ins-badge.conflict-a { background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #60a5fa; }
-.ins-badge.conflict-b { background: rgba(139, 92, 246, 0.2); border: 1px solid #8b5cf6; color: #a78bfa; }
+.ins-badge { padding: 4px 10px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.3px; }
+.ins-badge.accept { background: rgba(14, 165, 233, 0.1); border: 1px solid rgba(14, 165, 233, 0.2); color: #38bdf8; }
+.ins-badge.reject { background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.2); color: #fb7185; }
+.ins-badge.conflict-a { background: rgba(168, 85, 247, 0.1); border: 1px solid rgba(168, 85, 247, 0.2); color: #c084fc; }
+.ins-badge.conflict-b { background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.2); color: #facc15; }
 
-.conflict-box { background: #1f2937; border-left: 3px solid #f59e0b; padding: 12px; margin-bottom: 10px; border-radius: 0 6px 6px 0; }
-.conflict-header { margin-bottom: 8px; }
-.vs { margin: 0 8px; color: #9ca3af; font-size: 12px; font-style: italic; }
-.conflict-reasoning { font-style: italic; color: #9ca3af; margin: 8px 0; padding-left: 10px; border-left: 2px solid #4b5563; }
-.error-box { background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #f87171; padding: 15px; border-radius: 8px; }
+/* Conflicts */
+.conflict-box { background: rgba(0, 0, 0, 0.2); border-left: 2px solid #52525b; padding: 12px; margin-bottom: 12px; border-radius: 0 6px 6px 0; }
+.conflict-header { margin-bottom: 10px; }
+.vs { margin: 0 10px; color: #52525b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+.conflict-type { margin-bottom: 6px; color: #d4d4d8; }
+.conflict-reasoning { font-style: italic; color: #71717a; margin: 8px 0; padding-left: 12px; border-left: 1px solid rgba(255, 255, 255, 0.1); font-size: 12px; line-height: 1.5; }
+.conflict-resolution { margin-top: 10px; font-size: 12px; color: #d4d4d8; }
+
+/* Misc */
+.error-box { background: rgba(225, 29, 72, 0.05); border: 1px solid rgba(225, 29, 72, 0.2); color: #fb7185; padding: 16px; border-radius: 8px; font-size: 13px; }
+.raw-pre { white-space: pre-wrap; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin-top: 10px; color: #a1a1aa; }
 """
 
 # ---------------------------------------------------------------------------
@@ -275,11 +290,11 @@ with gr.Blocks(title="ConflictBench — Instruction Priority Resolver") as demo:
     # Header
     with gr.Row():
         gr.HTML("""
-            <div style="text-align: center; margin-bottom: 20px;">
-                <h1 style="font-weight: 800; font-size: 2.5rem; background: linear-gradient(90deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                    ⚔️ ConflictBench
+            <div style="text-align: center; margin-bottom: 30px; margin-top: 10px;">
+                <h1 style="font-weight: 600; font-size: 2rem; color: #f4f4f5; letter-spacing: -0.5px; margin-bottom: 4px;">
+                    ConflictBench
                 </h1>
-                <p style="font-size: 1.1rem; color: #9ca3af;">The AI "Middle Management" Stress Test</p>
+                <p style="font-size: 0.95rem; color: #71717a; font-family: 'Inter', sans-serif;">Enterprise Instruction Priority Evaluation Environment</p>
             </div>
         """)
 
@@ -287,17 +302,17 @@ with gr.Blocks(title="ConflictBench — Instruction Priority Resolver") as demo:
         # LEFT SIDEBAR: Controls & Info
         with gr.Column(scale=1):
             with gr.Group():
-                gr.Markdown("### ⚙️ Scenario Generation")
+                gr.Markdown("### Scenario Configuration")
                 difficulty_slider = gr.Slider(
                     minimum=1, maximum=3, step=1, value=2, 
                     label="Difficulty Profile", 
                     info="1 = Easy (2 Conflicts), 2 = Medium (4), 3 = Hard (6)"
                 )
-                gen_btn = gr.Button("🎲 Generate New Scenario", variant="primary", size="lg")
+                gen_btn = gr.Button("Generate Scenario", variant="primary", size="lg")
                 
-            scenario_meta = gr.Markdown("<div style='padding: 10px; text-align: center; color: #9ca3af;'>*Initialize a scenario to begin*</div>")
+            scenario_meta = gr.Markdown("<div style='padding: 12px; text-align: center; color: #71717a; font-size: 12px;'>*Initialize a scenario to begin*</div>")
             
-            with gr.Accordion("📚 Document Preview", open=True):
+            with gr.Accordion("Document Details", open=True):
                 scenario_display = gr.Textbox(
                     label="Raw Business Instructions", 
                     lines=18, interactive=False, 
@@ -307,48 +322,48 @@ with gr.Blocks(title="ConflictBench — Instruction Priority Resolver") as demo:
             gr.Markdown(
                 """
                 ---
-                **Links:**
-                [🤗 HuggingFace Space](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench) |
-                [🐙 GitHub Repo](https://github.com/Harsh-4210/Conflict_Bench)
+                **Resources**
+                [HuggingFace Space](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench) |
+                [GitHub Repository](https://github.com/Harsh-4210/Conflict_Bench)
                 """
             )
 
         # RIGHT MAIN AREA: Models
         with gr.Column(scale=2):
             with gr.Tabs():
-                with gr.TabItem("⚔️ Arena (Side-by-Side)"):
+                with gr.TabItem("Arena Assessment"):
                     with gr.Row():
                         with gr.Column():
-                            gr.HTML("<h3 style='text-align:center; color: #9ca3af;'>Base Model</h3><p style='text-align:center; font-size: 12px; margin-top:-10px;'>Qwen2.5-3B-Instruct</p>")
-                            base_btn = gr.Button("▶️ Run Base Model", interactive=False)
-                            base_score = gr.HTML("<div class='score-container'><div style='text-align:center; color:#6b7280;'>Awaiting inference...</div></div>")
-                            base_output = gr.HTML("<div class='card' style='text-align:center; color:#6b7280;'>Output will appear here</div>")
+                            gr.HTML("<div style='text-align:center; margin-bottom: 16px;'><span style='color: #a1a1aa; font-weight: 500; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;'>Base Model</span><br><span style='color: #71717a; font-size: 11px;'>Qwen2.5-3B-Instruct</span></div>")
+                            base_btn = gr.Button("Run Inference", interactive=False)
+                            base_score = gr.HTML("<div class='score-container'><div style='text-align:center; color:#52525b; font-size: 13px;'>Awaiting execution...</div></div>")
+                            base_output = gr.HTML("<div class='glass-card' style='text-align:center; color:#52525b; font-size: 13px;'>Output pending</div>")
 
                         with gr.Column():
-                            gr.HTML("<h3 style='text-align:center; color: #34d399;'>Fine-Tuned Model</h3><p style='text-align:center; font-size: 12px; margin-top:-10px;'>ConflictBench Policy</p>")
-                            trained_btn = gr.Button("🚀 Run Fine-Tuned Model", interactive=False, variant="primary")
-                            trained_score = gr.HTML("<div class='score-container'><div style='text-align:center; color:#6b7280;'>Awaiting inference...</div></div>")
-                            trained_output = gr.HTML("<div class='card' style='text-align:center; color:#6b7280;'>Output will appear here</div>")
+                            gr.HTML("<div style='text-align:center; margin-bottom: 16px;'><span style='color: #38bdf8; font-weight: 500; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;'>Fine-Tuned Policy</span><br><span style='color: #71717a; font-size: 11px;'>ConflictBench Checkpoint</span></div>")
+                            trained_btn = gr.Button("Run Inference", interactive=False, variant="primary")
+                            trained_score = gr.HTML("<div class='score-container'><div style='text-align:center; color:#52525b; font-size: 13px;'>Awaiting execution...</div></div>")
+                            trained_output = gr.HTML("<div class='glass-card' style='text-align:center; color:#52525b; font-size: 13px;'>Output pending</div>")
 
-                with gr.TabItem("✅ Ground Truth Inspector"):
-                    gr.Markdown("Deep dive into the hidden conflicts of the currently generated scenario.")
-                    gt_btn = gr.Button("Reveal Ground Truth Solutions")
-                    gt_output = gr.HTML("<div class='card' style='text-align:center; color:#6b7280;'>Click reveal to see correct logic.</div>")
+                with gr.TabItem("Ground Truth"):
+                    gr.Markdown("Examine the hidden organizational conflicts and expected resolution logic for the active scenario.")
+                    gt_btn = gr.Button("Reveal Correct Logic")
+                    gt_output = gr.HTML("<div class='glass-card' style='text-align:center; color:#52525b; font-size: 13px;'>Action required.</div>")
 
-                with gr.TabItem("ℹ️ Rubric & Methodology"):
+                with gr.TabItem("Evaluation Framework"):
                     gr.Markdown("""
-                    ### How Agents Are Evaluated
+                    ### Assessment Methodology
                     
                     ConflictBench tests if an LLM can understand implicit corporate hierarchy. 
                     If two instructions conflict, the agent MUST resolve it by deferring to the higher authority:
                     
-                    **Hierarchy:** `Legal/Regulatory > C-Suite > VP > Director > Manager > Team Lead`
+                    **Authority Hierarchy:** `Legal/Regulatory > C-Suite > VP > Director > Manager > Team Lead`
                     
-                    The agent receives a strict JSON constraint. We score:
-                    1. **Format:** Is it parsable JSON?
-                    2. **Identification:** Did it find all the hidden conflicts?
-                    3. **Contradictions:** Did it mistakenly execute conflicting directives?
-                    4. **Final State:** Did it execute the highest-authority directives?
+                    The agent receives a strict JSON constraint. System evaluation covers:
+                    1. **Format Compliance:** Structural integrity of the JSON payload.
+                    2. **Conflict Identification:** Accuracy in detecting hidden contradictory directives.
+                    3. **Contradiction Avoidance:** Penalizes execution of mutually exclusive directives.
+                    4. **Final State Validation:** Rewards adherence to the highest-authority directives.
                     """)
 
     # Events wiring
@@ -357,10 +372,10 @@ with gr.Blocks(title="ConflictBench — Instruction Priority Resolver") as demo:
         inputs=[difficulty_slider],
         outputs=[scenario_state, scenario_display, scenario_meta, base_btn, trained_btn],
     ).then(
-        fn=lambda: ("<div class='score-container'><div style='text-align:center; color:#6b7280;'>Awaiting inference...</div></div>", 
-                    "<div class='score-container'><div style='text-align:center; color:#6b7280;'>Awaiting inference...</div></div>",
-                    "<div class='card' style='text-align:center; color:#6b7280;'>Output will appear here</div>",
-                    "<div class='card' style='text-align:center; color:#6b7280;'>Output will appear here</div>"),
+        fn=lambda: ("<div class='score-container'><div style='text-align:center; color:#52525b; font-size: 13px;'>Awaiting execution...</div></div>", 
+                    "<div class='score-container'><div style='text-align:center; color:#52525b; font-size: 13px;'>Awaiting execution...</div></div>",
+                    "<div class='glass-card' style='text-align:center; color:#52525b; font-size: 13px;'>Output pending</div>",
+                    "<div class='glass-card' style='text-align:center; color:#52525b; font-size: 13px;'>Output pending</div>"),
         outputs=[base_score, trained_score, base_output, trained_output]
     )
     
