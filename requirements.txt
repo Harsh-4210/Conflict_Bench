@@ -23,6 +23,7 @@ numpy>=1.24.0
 
 # Demo
 gradio>=4.44.0
+pyaudioop
 
 # Optional: experiment tracking
 # wandb
