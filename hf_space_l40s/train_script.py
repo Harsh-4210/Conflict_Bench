@@ -292,7 +292,17 @@ def run_training(progress_callback=None):
             if logs:
                 entry = {"step": state.global_step, **{k: v for k, v in logs.items() if isinstance(v, (int, float))}}
                 _training_log.append(entry)
-                msg = f"Step {state.global_step}: " + " | ".join(f"{k}={v:.4f}" for k, v in entry.items() if k != "step")
+                
+                # Format learning rate with scientific notation, others with 4 decimals
+                parts = []
+                for k, v in entry.items():
+                    if k == "step": continue
+                    if "learning_rate" in k:
+                        parts.append(f"{k}={v:.2e}")
+                    else:
+                        parts.append(f"{k}={v:.4f}")
+                
+                msg = f"Step {state.global_step}: " + " | ".join(parts)
                 emit(msg)
 
     grpo_config = GRPOConfig(
