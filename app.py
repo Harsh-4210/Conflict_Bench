@@ -267,7 +267,7 @@ body { font-family: 'Inter', 'Segoe UI', sans-serif; }
 # Gradio UI
 # ---------------------------------------------------------------------------
 
-with gr.Blocks(title="ConflictBench — Instruction Priority Resolver", css=custom_css) as demo:
+with gr.Blocks(title="ConflictBench — Instruction Priority Resolver") as demo:
     
     # State variable for concurrent usage
     scenario_state = gr.State(None)
@@ -301,7 +301,6 @@ with gr.Blocks(title="ConflictBench — Instruction Priority Resolver", css=cust
                 scenario_display = gr.Textbox(
                     label="Raw Business Instructions", 
                     lines=18, interactive=False, 
-                    show_copy_button=True,
                     elem_classes="glass-textbox"
                 )
 
@@ -377,4 +376,4 @@ except Exception as e:
     print(f"Model loading deferred: {e}")
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Base())
+    demo.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Base(), css=custom_css)
