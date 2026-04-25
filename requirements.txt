@@ -7,15 +7,15 @@
 openenv-core
 
 # Core ML
-unsloth[cu121-torch250]       # Unsloth with CUDA 12.1 + PyTorch 2.5.0
-trl>=0.12.0
+# unsloth[cu121-torch250]       # Unsloth with CUDA 12.1 + PyTorch 2.5.0
+# trl>=0.12.0
 transformers>=4.45.0
-peft>=0.12.0
-datasets>=2.20.0
-accelerate>=0.33.0
+# peft>=0.12.0
+# datasets>=2.20.0
+# accelerate>=0.33.0
 
 # Quantization (Windows: use bitsandbytes-windows)
-bitsandbytes>=0.43.0
+# bitsandbytes>=0.43.0
 
 # Data & utils
 torch>=2.1.0
