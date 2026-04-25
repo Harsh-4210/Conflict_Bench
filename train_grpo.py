@@ -14,6 +14,10 @@ import random
 import logging
 from typing import List, Dict, Any
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load local .env file (for HF_TOKEN, WANDB_API_KEY, etc.)
+load_dotenv()
 
 import torch
 from datasets import Dataset
@@ -43,13 +47,13 @@ MAX_SEQ_LENGTH = 4096        # increased — prompts are long, need headroom
 OUTPUT_DIR = "./conflictbench-grpo-output"
 HF_REPO_ID = None            # set to "your-username/conflictbench-model" to push to HF
 
-TRAIN_SCENARIOS = 600        # slightly reduced — faster iteration
-EVAL_SCENARIOS = 80
+TRAIN_SCENARIOS = 120        # reduced for faster training/smoke run
+EVAL_SCENARIOS = 20
 NUM_EPOCHS = 2               # 2 epochs is enough with proper token budget
 BATCH_SIZE = 1               # keep 1 for Colab T4/4060
 GRADIENT_ACCUMULATION = 4    # effective batch = 4
 NUM_GENERATIONS = 4          # GRPO samples 4 responses per prompt, ranks them
-MAX_NEW_TOKENS = 512         # JSON response for 2-conflict scenario fits in 512 easily
+MAX_NEW_TOKENS = 1024        # Increased to 1024 to allow room for CoT reasoning
 LEARNING_RATE = 5e-6
 WARMUP_RATIO = 0.05
 SEED = 42
@@ -89,7 +93,7 @@ def build_dataset(n_train: int, n_eval: int) -> tuple[Dataset, Dataset]:
             if len(scenario.prompt) > MAX_PROMPT_CHARS:
                 continue
             records.append({
-                "prompt": scenario.prompt,
+                "prompt": [{"role": "user", "content": scenario.prompt}],
                 "scenario_json": json.dumps({
                     "ground_truth_followed": scenario.ground_truth_followed,
                     "ground_truth_overridden": scenario.ground_truth_overridden,
@@ -250,7 +254,7 @@ def main():
         learning_rate=LEARNING_RATE,
         warmup_ratio=WARMUP_RATIO,
         num_generations=NUM_GENERATIONS,
-        max_new_tokens=MAX_NEW_TOKENS,           # 512 — JSON response fits comfortably
+        max_completion_length=MAX_NEW_TOKENS,    # 512 — JSON response fits comfortably
         max_prompt_length=3200,                  # ~900 tokens for diff-1 prompt + padding
         temperature=0.9,
         top_p=0.95,
@@ -260,7 +264,7 @@ def main():
         eval_steps=50,
         fp16=not torch.cuda.is_bf16_supported(),
         bf16=torch.cuda.is_bf16_supported(),
-        report_to="none",  # set to "wandb" if you want W&B tracking
+        report_to="wandb",  # Automatically tracks all rewards and loss
         seed=SEED,
         dataloader_num_workers=0,  # Windows compatibility
         # GRPO-specific

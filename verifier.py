@@ -31,6 +31,12 @@ def parse_agent_output(raw: str) -> AgentOutput:
     Extract and parse the JSON block from LLM output.
     Handles common LLM formatting issues (markdown fences, trailing text).
     """
+    # Handle case where TRL passes the completion as a list of message dicts
+    if isinstance(raw, list):
+        raw = raw[-1].get("content", "") if raw else ""
+    elif not isinstance(raw, str):
+        raw = str(raw)
+
     # Strip markdown code fences if present
     cleaned = raw.strip()
     fence_match = re.search(r"```(?:json)?\s*([\s\S]+?)```", cleaned)

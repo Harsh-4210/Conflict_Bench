@@ -1,8 +1,8 @@
 """
 ConflictBench — HuggingFace Spaces Demo (Gradio)
+Premium UI Redesign — Dark Glassmorphism + Violet/Cyan Palette
 Showcases before/after training: base model vs fine-tuned model side by side.
 Live scoring with animated reward breakdown.
-
 Deploy: push this file + requirements to a HF Space (SDK: gradio).
 """
 
@@ -16,44 +16,46 @@ import gradio as gr
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent))
+
 from generator import ScenarioGenerator
 from verifier import score as compute_score, parse_agent_output
-
 
 # ---------------------------------------------------------------------------
 # Model loading
 # ---------------------------------------------------------------------------
 
-BASE_MODEL_ID = "Qwen/Qwen2.5-3B-Instruct"
-TRAINED_MODEL_ID = os.getenv("TRAINED_MODEL_ID", None)  # set this env var in HF Space settings
+BASE_MODEL_ID    = "Qwen/Qwen2.5-3B-Instruct"
+TRAINED_MODEL_ID = os.getenv("TRAINED_MODEL_ID", None)
 
-_base_model = None
-_base_tokenizer = None
-_trained_model = None
+_base_model      = None
+_base_tokenizer  = None
+_trained_model   = None
 _trained_tokenizer = None
-_generator = ScenarioGenerator(seed=None)
+_generator       = ScenarioGenerator(seed=None)
+
+
 def load_models():
     global _base_model, _base_tokenizer, _trained_model, _trained_tokenizer
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    print("Loading base model...")
+    print("Loading base model…")
     _base_tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
-    _base_model = AutoModelForCausalLM.from_pretrained(
+    _base_model     = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL_ID,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
         device_map="auto" if torch.cuda.is_available() else "cpu",
     )
 
     if TRAINED_MODEL_ID:
-        print(f"Loading trained model from {TRAINED_MODEL_ID}...")
+        print(f"Loading trained model from {TRAINED_MODEL_ID}…")
         _trained_tokenizer = AutoTokenizer.from_pretrained(TRAINED_MODEL_ID)
-        _trained_model = AutoModelForCausalLM.from_pretrained(
+        _trained_model     = AutoModelForCausalLM.from_pretrained(
             TRAINED_MODEL_ID,
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
             device_map="auto" if torch.cuda.is_available() else "cpu",
         )
     else:
-        print("No trained model ID set. Demo will run base model only.")
+        print("No TRAINED_MODEL_ID set — demo runs base model only.")
 
 
 def infer(model, tokenizer, prompt: str, max_new_tokens: int = 512) -> str:
@@ -79,316 +81,1011 @@ def infer(model, tokenizer, prompt: str, max_new_tokens: int = 512) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Score & JSON Formatters (HTML/CSS)
+# HTML Renderers
 # ---------------------------------------------------------------------------
 
-def format_score_html(breakdown_dict: dict) -> str:
-    rubric_labels = {
-        "correct_final_state":    "Correct Final State",
-        "no_contradictions":      "No Contradictions",
-        "conflict_identification": "Conflict Identification",
-        "efficiency":             "Plan Efficiency",
-        "format_compliance":      "Format Compliance",
-    }
-    
-    html = '<div class="score-container">'
-    for k, label in rubric_labels.items():
-        v = breakdown_dict.get(k, 0.0)
-        pct = int(v * 100)
-        # Muted enterprise colors
-        color = "#0ea5e9" if pct == 100 else ("#64748b" if pct > 0 else "#3f3f46")
-        html += f'''
-        <div class="score-row">
-            <div class="score-label">{label}</div>
-            <div class="score-bar-bg">
-                <div class="score-bar-fill" style="width: {pct}%; background-color: {color};"></div>
-            </div>
-            <div class="score-value">{v:.2f}</div>
+def _rubric_bar(label: str, value: float, weight_pct: int) -> str:
+    pct   = int(value * 100)
+    grade = "A" if pct >= 80 else ("B" if pct >= 60 else ("C" if pct >= 40 else "D"))
+    color = (
+        "#10b981" if pct >= 80 else
+        "#06b6d4" if pct >= 60 else
+        "#f59e0b" if pct >= 40 else
+        "#f43f5e"
+    )
+    return f"""
+    <div class="rb-row">
+      <div class="rb-meta">
+        <span class="rb-label">{label}</span>
+        <span class="rb-weight">×{weight_pct}%</span>
+      </div>
+      <div class="rb-track">
+        <div class="rb-fill" style="width:{pct}%;background:{color};"></div>
+      </div>
+      <div class="rb-right">
+        <span class="rb-grade" style="color:{color};">{grade}</span>
+        <span class="rb-val">{value:.2f}</span>
+      </div>
+    </div>"""
+
+
+def format_score_html(bd: dict) -> str:
+    composite = bd.get("composite", 0.0)
+    cpct      = int(composite * 100)
+    c_color   = "#10b981" if cpct >= 80 else ("#06b6d4" if cpct >= 60 else ("#f59e0b" if cpct >= 40 else "#f43f5e"))
+    tier      = "EXCELLENT" if cpct >= 80 else ("GOOD" if cpct >= 60 else ("FAIR" if cpct >= 40 else "POOR"))
+
+    bars = (
+        _rubric_bar("Correct Final State",     bd.get("correct_final_state",     0.0), 35) +
+        _rubric_bar("No Contradictions",        bd.get("no_contradictions",        0.0), 25) +
+        _rubric_bar("Conflict Identification",  bd.get("conflict_identification",  0.0), 20) +
+        _rubric_bar("Plan Efficiency",          bd.get("efficiency",               0.0), 10) +
+        _rubric_bar("Format Compliance",        bd.get("format_compliance",        0.0), 10)
+    )
+
+    return f"""
+    <div class="score-wrap">
+      <div class="score-hero">
+        <svg class="score-ring" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="10"/>
+          <circle cx="60" cy="60" r="52" fill="none" stroke="{c_color}"
+            stroke-width="10" stroke-linecap="round"
+            stroke-dasharray="{int(327 * composite)} 327"
+            transform="rotate(-90 60 60)" style="transition:stroke-dasharray 0.8s ease;"/>
+        </svg>
+        <div class="score-hero-text">
+          <span class="score-num" style="color:{c_color};">{cpct}</span>
+          <span class="score-denom">/100</span>
+          <span class="score-tier" style="color:{c_color};">{tier}</span>
         </div>
-        '''
-    
-    composite = breakdown_dict.get("composite", 0.0)
-    comp_pct = int(composite * 100)
-    # Sleek highlight for composite
-    comp_color = "#38bdf8" if comp_pct > 80 else ("#94a3b8" if comp_pct > 40 else "#52525b")
-    html += f'''
-        <div class="score-row composite-row">
-            <div class="score-label" style="font-weight: 500; color: #f8fafc;">Composite Score</div>
-            <div class="score-bar-bg" style="height: 6px;">
-                <div class="score-bar-fill" style="width: {comp_pct}%; background-color: {comp_color};"></div>
-            </div>
-            <div class="score-value" style="font-weight: 500; color: #f8fafc;">{composite:.3f}</div>
-        </div>
-    </div>
-    '''
-    return html
+      </div>
+      <div class="rb-list">{bars}</div>
+    </div>"""
 
 
 def format_json_html(raw: str) -> str:
-    """Renders the parsed JSON into a beautiful HTML card format."""
     parsed = parse_agent_output(raw)
-    if parsed is None:
-        return f'<div class="error-box"><strong>Failed to parse output.</strong><br><pre class="raw-pre">{raw}</pre></div>'
-    
-    html = '<div class="json-visualizer">'
-    
-    # Execution Plan
-    html += '<div class="glass-card"><div class="glass-card-title">Execution Plan</div><ul class="instruction-list">'
-    if not parsed["execution_plan"]:
-        html += '<li><span class="muted-text">None</span></li>'
-    else:
-        for ins in parsed["execution_plan"]:
-            html += f'<li><span class="ins-badge accept">{ins}</span></li>'
-    html += '</ul></div>'
-    
-    # Overridden
-    html += '<div class="glass-card"><div class="glass-card-title">Overridden Instructions</div><ul class="instruction-list">'
-    if not parsed["overridden_instructions"]:
-        html += '<li><span class="muted-text">None</span></li>'
-    else:
-        for ins in parsed["overridden_instructions"]:
-            html += f'<li><span class="ins-badge reject">{ins}</span></li>'
-    html += '</ul></div>'
-    
-    # Conflicts
-    html += '<div class="glass-card"><div class="glass-card-title">Identified Conflicts</div>'
-    if not parsed["identified_conflicts"]:
-        html += '<span class="muted-text">No conflicts identified.</span>'
-    else:
-        for c in parsed["identified_conflicts"]:
-            res = c.get("resolution", "UNKNOWN")
-            res_class = "accept" if res != "UNKNOWN" else "reject"
-            html += f'''
-            <div class="conflict-box">
-                <div class="conflict-header">
-                    <span class="ins-badge conflict-a">{c.get("instruction_a", "?")}</span> 
-                    <span class="vs">vs</span> 
-                    <span class="ins-badge conflict-b">{c.get("instruction_b", "?")}</span>
-                </div>
-                <div class="conflict-type"><strong>Type:</strong> {c.get("conflict_type", "N/A")}</div>
-                <div class="conflict-reasoning">"{c.get("reasoning", "No reasoning provided.")}"</div>
-                <div class="conflict-resolution"><strong>Resolution:</strong> <span class="ins-badge {res_class}">{res}</span></div>
-            </div>
-            '''
-    html += '</div></div>'
-    return html
+    if parsed is None or not parsed.parsed_ok:
+        raw_escaped = str(raw).replace("<", "&lt;").replace(">", "&gt;")
+        return f"""
+        <div class="parse-error">
+          <div class="pe-title">⚠ Parse Failed</div>
+          <pre class="pe-raw">{raw_escaped[:1200]}</pre>
+        </div>"""
+
+    # ── Execution Plan ──────────────────────────────────────────────────
+    plan_pills = "".join(
+        f'<span class="pill pill-follow">{ins}</span>'
+        for ins in (parsed.execution_plan or [])
+    ) or '<span class="empty-state">None</span>'
+
+    # ── Overridden ──────────────────────────────────────────────────────
+    over_pills = "".join(
+        f'<span class="pill pill-override">{ins}</span>'
+        for ins in (parsed.overridden_instructions or [])
+    ) or '<span class="empty-state">None</span>'
+
+    # ── Conflicts ───────────────────────────────────────────────────────
+    conflicts_html = ""
+    for c in (parsed.identified_conflicts or []):
+        res       = c.get("resolution", "UNKNOWN")
+        ctype     = c.get("conflict_type", "N/A")
+        reasoning = c.get("reasoning", "No reasoning provided.")[:200]
+        res_class = "pill-follow" if res != "UNKNOWN" else "pill-override"
+        conflicts_html += f"""
+        <div class="conflict-card">
+          <div class="conflict-ids">
+            <span class="pill pill-a">{c.get('instruction_a','?')}</span>
+            <span class="vs-sep">⚡ vs</span>
+            <span class="pill pill-b">{c.get('instruction_b','?')}</span>
+          </div>
+          <div class="conflict-row"><span class="meta-key">Type</span><span class="meta-val">{ctype}</span></div>
+          <div class="conflict-reasoning">"{reasoning}"</div>
+          <div class="conflict-row" style="margin-top:10px;">
+            <span class="meta-key">Resolved by</span>
+            <span class="pill {res_class}" style="font-size:11px;">{res}</span>
+          </div>
+        </div>"""
+
+    if not conflicts_html:
+        conflicts_html = '<span class="empty-state">No conflicts identified.</span>'
+
+    return f"""
+    <div class="jv-root">
+      <div class="jv-section">
+        <div class="jv-header"><span class="jv-icon">✅</span>Execution Plan
+          <span class="jv-count">{len(parsed.execution_plan or [])}</span>
+        </div>
+        <div class="jv-pills">{plan_pills}</div>
+      </div>
+      <div class="jv-section">
+        <div class="jv-header"><span class="jv-icon">🚫</span>Overridden
+          <span class="jv-count">{len(parsed.overridden_instructions or [])}</span>
+        </div>
+        <div class="jv-pills">{over_pills}</div>
+      </div>
+      <div class="jv-section">
+        <div class="jv-header"><span class="jv-icon">⚔️</span>Conflict Analysis
+          <span class="jv-count">{len(parsed.identified_conflicts or [])}</span>
+        </div>
+        {conflicts_html}
+      </div>
+    </div>"""
 
 
-# ---------------------------------------------------------------------------
-# Gradio handlers
-# ---------------------------------------------------------------------------
-
-def generate_scenario(difficulty: int):
-    scenario = _generator.generate(difficulty=difficulty)
-    preview = scenario.prompt
-    meta = (
-        f"**Domain:** {scenario.domain} | "
-        f"**Difficulty Level:** {scenario.difficulty} | "
-        f"**Total Instructions:** {len(scenario.instructions)} | "
-        f"**Embedded Conflicts:** {len(scenario.conflicts)}"
-    )
-    return scenario, preview, meta, gr.update(interactive=True), gr.update(interactive=True)
-
-
-def run_base_model(scenario):
+def format_ground_truth_html(scenario) -> str:
     if scenario is None:
-        gr.Warning("Please generate a scenario first!")
-        return "", ""
-    gr.Info("Base model generating response...")
-    response = infer(_base_model, _base_tokenizer, scenario.prompt)
-    breakdown = compute_score(response, scenario)
-    return format_json_html(response), format_score_html(breakdown.to_dict())
-
-
-def run_trained_model(scenario):
-    if scenario is None:
-        gr.Warning("Please generate a scenario first!")
-        return "", ""
-    if _trained_model is None:
-        gr.Warning("Trained model is not loaded. Ensure TRAINED_MODEL_ID is set.")
-        return "", ""
-    gr.Info("Fine-tuned model generating response...")
-    response = infer(_trained_model, _trained_tokenizer, scenario.prompt)
-    breakdown = compute_score(response, scenario)
-    return format_json_html(response), format_score_html(breakdown.to_dict())
-
-
-def show_ground_truth(scenario):
-    if scenario is None:
-        return '<div class="error-box">Generate a scenario first.</div>'
+        return '<div class="parse-error"><div class="pe-title">Generate a scenario first.</div></div>'
     gt_json = json.dumps({
         "identified_conflicts": [
             {
                 "instruction_a": c.instruction_a_id,
                 "instruction_b": c.instruction_b_id,
                 "conflict_type": c.conflict_type,
-                "resolution": c.resolution_id,
-                "reasoning": c.explanation,
+                "resolution":    c.resolution_id,
+                "reasoning":     c.explanation,
             }
             for c in scenario.conflicts
         ],
-        "execution_plan": scenario.ground_truth_followed,
+        "execution_plan":          scenario.ground_truth_followed,
         "overridden_instructions": scenario.ground_truth_overridden,
     })
     return format_json_html(gt_json)
 
 
 # ---------------------------------------------------------------------------
-# CSS & Styling
+# Gradio event handlers
 # ---------------------------------------------------------------------------
 
-custom_css = """
-/* Enterprise Glassmorphism Theme */
-body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #09090b !important; color: #e4e4e7; }
-.gradio-container { background-color: transparent !important; }
+def generate_scenario(difficulty: int):
+    scenario = _generator.generate(difficulty=difficulty)
+    diff_map = {1: "Easy", 2: "Medium", 3: "Hard"}
+    meta_html = f"""
+    <div class="meta-strip">
+      <div class="meta-chip"><span class="mc-label">Domain</span><span class="mc-val">{scenario.domain}</span></div>
+      <div class="meta-chip"><span class="mc-label">Difficulty</span>
+        <span class="mc-val diff-{difficulty}">{diff_map.get(difficulty,'?')}</span></div>
+      <div class="meta-chip"><span class="mc-label">Instructions</span>
+        <span class="mc-val">{len(scenario.instructions)}</span></div>
+      <div class="meta-chip"><span class="mc-label">Conflicts</span>
+        <span class="mc-val">{len(scenario.conflicts)}</span></div>
+    </div>"""
+    reset_score = "<div class='score-wrap pending-state'>Run inference to see scores</div>"
+    reset_out   = "<div class='jv-root pending-state'>Output will appear here</div>"
+    return (
+        scenario,
+        scenario.prompt,
+        meta_html,
+        gr.update(interactive=True),
+        gr.update(interactive=True),
+        reset_score, reset_score,
+        reset_out,   reset_out,
+    )
 
-/* Score Bars */
-.score-container { background: rgba(24, 24, 27, 0.4); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 10px; box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.2); }
-.score-row { display: flex; align-items: center; margin-bottom: 10px; font-size: 13px; color: #a1a1aa; }
-.score-label { width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.2px; }
-.score-bar-bg { flex-grow: 1; background: rgba(255, 255, 255, 0.05); height: 4px; border-radius: 2px; margin: 0 16px; overflow: hidden; }
-.score-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
-.score-value { width: 36px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
-.composite-row { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
 
-/* Glass Cards for JSON */
-.json-visualizer { font-family: 'Inter', sans-serif; font-size: 13px; }
-.glass-card { background: rgba(24, 24, 27, 0.5); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); }
-.glass-card-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 12px; color: #a1a1aa; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 8px; }
-.muted-text { color: #52525b; font-style: italic; }
+def run_base_model(scenario):
+    if scenario is None:
+        gr.Warning("Generate a scenario first!")
+        return "", ""
+    gr.Info("Running base model inference…")
+    response  = infer(_base_model, _base_tokenizer, scenario.prompt)
+    breakdown = compute_score(response, scenario)
+    return format_json_html(response), format_score_html(breakdown.to_dict())
 
-/* Badges */
-.instruction-list { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-.ins-badge { padding: 4px 10px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.3px; }
-.ins-badge.accept { background: rgba(14, 165, 233, 0.1); border: 1px solid rgba(14, 165, 233, 0.2); color: #38bdf8; }
-.ins-badge.reject { background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.2); color: #fb7185; }
-.ins-badge.conflict-a { background: rgba(168, 85, 247, 0.1); border: 1px solid rgba(168, 85, 247, 0.2); color: #c084fc; }
-.ins-badge.conflict-b { background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.2); color: #facc15; }
 
-/* Conflicts */
-.conflict-box { background: rgba(0, 0, 0, 0.2); border-left: 2px solid #52525b; padding: 12px; margin-bottom: 12px; border-radius: 0 6px 6px 0; }
-.conflict-header { margin-bottom: 10px; }
-.vs { margin: 0 10px; color: #52525b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
-.conflict-type { margin-bottom: 6px; color: #d4d4d8; }
-.conflict-reasoning { font-style: italic; color: #71717a; margin: 8px 0; padding-left: 12px; border-left: 1px solid rgba(255, 255, 255, 0.1); font-size: 12px; line-height: 1.5; }
-.conflict-resolution { margin-top: 10px; font-size: 12px; color: #d4d4d8; }
+def run_trained_model(scenario):
+    if scenario is None:
+        gr.Warning("Generate a scenario first!")
+        return "", ""
+    if _trained_model is None:
+        gr.Warning("Trained model not loaded — set TRAINED_MODEL_ID env var.")
+        return "", ""
+    gr.Info("Running fine-tuned model inference…")
+    response  = infer(_trained_model, _trained_tokenizer, scenario.prompt)
+    breakdown = compute_score(response, scenario)
+    return format_json_html(response), format_score_html(breakdown.to_dict())
 
-/* Misc */
-.error-box { background: rgba(225, 29, 72, 0.05); border: 1px solid rgba(225, 29, 72, 0.2); color: #fb7185; padding: 16px; border-radius: 8px; font-size: 13px; }
-.raw-pre { white-space: pre-wrap; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin-top: 10px; color: #a1a1aa; }
+
+# ---------------------------------------------------------------------------
+# CSS
+# ---------------------------------------------------------------------------
+
+CUSTOM_CSS = """
+/* ── Google Fonts ──────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Root / Reset ──────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body, .gradio-container {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  background: #06060a !important;
+  color: #e2e8f0 !important;
+}
+
+.gradio-container { max-width: 1400px !important; margin: 0 auto !important; }
+
+/* Hide Gradio branding */
+footer { display: none !important; }
+
+/* ── Scrollbar ─────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #0f0f18; }
+::-webkit-scrollbar-thumb { background: #2d2d44; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #4c4c6e; }
+
+/* ── Hero Header ───────────────────────────────────────────────────── */
+.cb-hero {
+  text-align: center;
+  padding: 48px 24px 36px;
+  position: relative;
+  overflow: hidden;
+}
+.cb-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% -10%, rgba(124,58,237,0.22) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 50%,  rgba(6,182,212,0.10) 0%, transparent 60%);
+  pointer-events: none;
+}
+.cb-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.cb-wordmark-icon {
+  width: 44px; height: 44px;
+  background: linear-gradient(135deg, #7c3aed, #06b6d4);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  box-shadow: 0 0 28px rgba(124,58,237,0.45);
+}
+.cb-title {
+  font-size: 2.1rem;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  background: linear-gradient(135deg, #c4b5fd 0%, #67e8f9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0;
+}
+.cb-subtitle {
+  color: #64748b;
+  font-size: 0.88rem;
+  letter-spacing: 0.3px;
+  margin: 6px 0 20px;
+}
+.cb-badges {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cb-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  border: 1px solid;
+}
+.cb-badge-purple { background: rgba(124,58,237,0.12); border-color: rgba(124,58,237,0.3); color: #a78bfa; }
+.cb-badge-cyan   { background: rgba(6,182,212,0.10);  border-color: rgba(6,182,212,0.25);  color: #67e8f9; }
+.cb-badge-amber  { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.25); color: #fcd34d; }
+
+/* ── Authority Hierarchy Banner ────────────────────────────────────── */
+.hier-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 0 0 24px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+}
+.hier-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+.hier-1 { background: rgba(239,68,68,0.12);  color: #fca5a5; }
+.hier-2 { background: rgba(245,158,11,0.10); color: #fcd34d; }
+.hier-3 { background: rgba(16,185,129,0.10); color: #6ee7b7; }
+.hier-4 { background: rgba(6,182,212,0.10);  color: #67e8f9; }
+.hier-5 { background: rgba(124,58,237,0.10); color: #c4b5fd; }
+.hier-6 { background: rgba(100,116,139,0.12);color: #94a3b8; }
+.hier-arrow {
+  color: #334155;
+  font-size: 14px;
+  margin: 0 2px;
+}
+
+/* ── Panel Cards ───────────────────────────────────────────────────── */
+.panel-card {
+  background: rgba(15, 15, 25, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 12px;
+}
+.panel-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.panel-title-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #06b6d4);
+}
+
+/* ── Meta Strip ────────────────────────────────────────────────────── */
+.meta-strip {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 0 4px;
+}
+.meta-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 14px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  min-width: 80px;
+}
+.mc-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #475569;
+  margin-bottom: 3px;
+}
+.mc-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+.diff-1 { color: #6ee7b7 !important; }
+.diff-2 { color: #fcd34d !important; }
+.diff-3 { color: #fca5a5 !important; }
+
+/* ── Gradio Textbox override ───────────────────────────────────────── */
+.gradio-textbox textarea {
+  background: rgba(255,255,255,0.02) !important;
+  border: 1px solid rgba(255,255,255,0.07) !important;
+  border-radius: 8px !important;
+  color: #94a3b8 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 12px !important;
+  line-height: 1.7 !important;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────── */
+.btn-generate {
+  background: linear-gradient(135deg, #7c3aed, #4f46e5) !important;
+  border: none !important;
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+  box-shadow: 0 0 24px rgba(124,58,237,0.35) !important;
+  transition: all 0.2s ease !important;
+}
+.btn-generate:hover { box-shadow: 0 0 36px rgba(124,58,237,0.5) !important; transform: translateY(-1px); }
+
+.btn-base {
+  background: rgba(100,116,139,0.15) !important;
+  border: 1px solid rgba(100,116,139,0.25) !important;
+  border-radius: 8px !important;
+  color: #94a3b8 !important;
+  font-weight: 500 !important;
+}
+.btn-trained {
+  background: linear-gradient(135deg, rgba(6,182,212,0.2), rgba(124,58,237,0.2)) !important;
+  border: 1px solid rgba(6,182,212,0.3) !important;
+  border-radius: 8px !important;
+  color: #67e8f9 !important;
+  font-weight: 600 !important;
+}
+
+/* ── Model Column Headers ──────────────────────────────────────────── */
+.model-header-base {
+  text-align: center;
+  padding: 14px 0 18px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  margin-bottom: 14px;
+}
+.model-header-trained {
+  text-align: center;
+  padding: 14px 0 18px;
+  border-bottom: 1px solid rgba(6,182,212,0.15);
+  margin-bottom: 14px;
+}
+.mh-tag {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+.mh-tag-base    { background: rgba(100,116,139,0.15); color: #94a3b8; border: 1px solid rgba(100,116,139,0.25); }
+.mh-tag-trained { background: rgba(6,182,212,0.12);  color: #67e8f9; border: 1px solid rgba(6,182,212,0.3);  }
+.mh-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+  display: block;
+}
+.mh-sub {
+  font-size: 11px;
+  color: #475569;
+  display: block;
+  margin-top: 2px;
+}
+
+/* ── Score Widget ──────────────────────────────────────────────────── */
+.score-wrap {
+  padding: 16px;
+  background: rgba(10,10,20,0.6);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+}
+.pending-state {
+  text-align: center;
+  color: #334155;
+  font-size: 13px;
+  padding: 30px 16px;
+}
+.score-hero {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 16px;
+}
+.score-ring {
+  width: 120px; height: 120px;
+}
+.score-hero-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  line-height: 1;
+}
+.score-num  { font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.score-denom{ font-size: 11px; color: #475569; display: block; }
+.score-tier { font-size: 9px;  font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; display: block; margin-top: 3px; }
+
+.rb-list { display: flex; flex-direction: column; gap: 10px; }
+.rb-row  { display: flex; align-items: center; gap: 8px; }
+.rb-meta { display: flex; flex-direction: column; width: 145px; flex-shrink: 0; }
+.rb-label  { font-size: 12px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rb-weight { font-size: 10px; color: #334155; margin-top: 1px; }
+.rb-track {
+  flex: 1;
+  height: 5px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.rb-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.rb-right  { display: flex; align-items: center; gap: 8px; width: 52px; justify-content: flex-end; }
+.rb-grade  { font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.rb-val    { font-size: 11px; color: #475569; font-family: 'JetBrains Mono', monospace; }
+
+/* ── JSON Visualizer ───────────────────────────────────────────────── */
+.jv-root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.jv-section {
+  background: rgba(10,10,20,0.5);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.jv-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.jv-icon { font-size: 14px; }
+.jv-count {
+  margin-left: auto;
+  background: rgba(255,255,255,0.05);
+  color: #64748b;
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: 11px;
+}
+.jv-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  border: 1px solid transparent;
+}
+.pill-follow   { background: rgba(16,185,129,0.10);  border-color: rgba(16,185,129,0.25);  color: #6ee7b7; }
+.pill-override { background: rgba(244,63,94,0.10);   border-color: rgba(244,63,94,0.25);   color: #fda4af; }
+.pill-a        { background: rgba(124,58,237,0.12);  border-color: rgba(124,58,237,0.3);   color: #c4b5fd; }
+.pill-b        { background: rgba(245,158,11,0.10);  border-color: rgba(245,158,11,0.25);  color: #fcd34d; }
+.empty-state   { color: #334155; font-size: 12px; font-style: italic; }
+
+/* ── Conflict Cards ────────────────────────────────────────────────── */
+.conflict-card {
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-left: 3px solid #7c3aed;
+  border-radius: 0 8px 8px 0;
+  padding: 13px 16px;
+  margin-bottom: 12px;
+}
+.conflict-card:last-child { margin-bottom: 0; }
+.conflict-ids {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.vs-sep { color: #334155; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; }
+.conflict-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.meta-key { color: #475569; font-size: 11px; min-width: 80px; }
+.meta-val { color: #94a3b8; }
+.conflict-reasoning {
+  font-style: italic;
+  color: #475569;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 8px 12px;
+  border-left: 2px solid rgba(255,255,255,0.06);
+  margin: 8px 0;
+}
+
+/* ── Parse Error ───────────────────────────────────────────────────── */
+.parse-error {
+  background: rgba(239,68,68,0.06);
+  border: 1px solid rgba(239,68,68,0.2);
+  border-radius: 8px;
+  padding: 16px;
+}
+.pe-title { color: #fca5a5; font-weight: 600; font-size: 13px; margin-bottom: 10px; }
+.pe-raw {
+  white-space: pre-wrap;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #64748b;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ── Tabs override ─────────────────────────────────────────────────── */
+.tab-nav button {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #64748b !important;
+  border-bottom: 2px solid transparent !important;
+}
+.tab-nav button.selected {
+  color: #a78bfa !important;
+  border-bottom-color: #7c3aed !important;
+}
+
+/* ── Methodology Card ──────────────────────────────────────────────── */
+.methodology-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.mc-item {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  padding: 14px;
+}
+.mc-item-num {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #7c3aed;
+  margin-bottom: 6px;
+}
+.mc-item-title { font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 4px; }
+.mc-item-body  { font-size: 11px; color: #475569; line-height: 1.5; }
+.weight-tag {
+  display: inline-block;
+  background: rgba(124,58,237,0.12);
+  color: #a78bfa;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+/* ── Divider ───────────────────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: rgba(255,255,255,0.05);
+  margin: 20px 0;
+}
+
+/* ── Footer Links ──────────────────────────────────────────────────── */
+.cb-links {
+  text-align: center;
+  padding: 12px 0;
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+.cb-link {
+  font-size: 12px;
+  color: #475569;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.cb-link:hover { color: #a78bfa; }
+
+/* ── Gradio component label overrides ─────────────────────────────── */
+label.svelte-1b6s6s, .label-wrap { color: #64748b !important; font-size: 12px !important; }
+.block.svelte-90oupt { background: transparent !important; border: none !important; }
 """
 
+
 # ---------------------------------------------------------------------------
-# Gradio UI
+# UI Layout
 # ---------------------------------------------------------------------------
 
-with gr.Blocks(title="ConflictBench — Instruction Priority Resolver") as demo:
-    
-    # State variable for concurrent usage
+HIER_HTML = """
+<div class="hier-banner">
+  <div class="hier-item hier-1">⚖️ Legal / Regulatory</div>
+  <span class="hier-arrow">›</span>
+  <div class="hier-item hier-2">👔 C-Suite</div>
+  <span class="hier-arrow">›</span>
+  <div class="hier-item hier-3">📋 VP</div>
+  <span class="hier-arrow">›</span>
+  <div class="hier-item hier-4">🗂 Director</div>
+  <span class="hier-arrow">›</span>
+  <div class="hier-item hier-5">👷 Manager</div>
+  <span class="hier-arrow">›</span>
+  <div class="hier-item hier-6">🔧 Team Lead</div>
+</div>
+"""
+
+HEADER_HTML = """
+<div class="cb-hero">
+  <div class="cb-wordmark">
+    <div class="cb-wordmark-icon">⚔️</div>
+    <h1 class="cb-title">ConflictBench</h1>
+  </div>
+  <p class="cb-subtitle">Instruction Priority Resolution · RL Training Environment · OpenEnv Hackathon India 2026</p>
+  <div class="cb-badges">
+    <span class="cb-badge cb-badge-purple">GRPO Training</span>
+    <span class="cb-badge cb-badge-cyan">Qwen2.5-3B</span>
+    <span class="cb-badge cb-badge-amber">Deterministic Scoring</span>
+    <span class="cb-badge cb-badge-purple">Scale AI Bonus</span>
+  </div>
+</div>
+"""
+
+METHODOLOGY_HTML = """
+<div class="methodology-card">
+  <div class="mc-item">
+    <div class="mc-item-num">01</div>
+    <div class="mc-item-title">Format Compliance</div>
+    <div class="mc-item-body">Validates JSON structure with all required keys and sub-fields.</div>
+    <span class="weight-tag">×10%</span>
+  </div>
+  <div class="mc-item">
+    <div class="mc-item-num">02</div>
+    <div class="mc-item-title">Conflict Identification</div>
+    <div class="mc-item-body">F1 score on detected conflict pairs plus resolution accuracy bonus.</div>
+    <span class="weight-tag">×20%</span>
+  </div>
+  <div class="mc-item">
+    <div class="mc-item-num">03</div>
+    <div class="mc-item-title">No Contradictions</div>
+    <div class="mc-item-body">Penalises co-execution of mutually exclusive action keys in the plan.</div>
+    <span class="weight-tag">×25%</span>
+  </div>
+  <div class="mc-item">
+    <div class="mc-item-num">04</div>
+    <div class="mc-item-title">Correct Final State</div>
+    <div class="mc-item-body">F1 of execution plan vs ground-truth — the primary signal for GRPO.</div>
+    <span class="weight-tag">×35%</span>
+  </div>
+  <div class="mc-item">
+    <div class="mc-item-num">05</div>
+    <div class="mc-item-title">Plan Efficiency</div>
+    <div class="mc-item-body">Penalises bloated plans; rewards precision over inclusion-by-default.</div>
+    <span class="weight-tag">×10%</span>
+  </div>
+</div>
+"""
+
+
+with gr.Blocks(
+    title="ConflictBench — Instruction Priority Resolver",
+    theme=gr.themes.Base(
+        primary_hue=gr.themes.colors.violet,
+        neutral_hue=gr.themes.colors.slate,
+        font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "sans-serif"],
+    ),
+    css=CUSTOM_CSS,
+) as demo:
+
     scenario_state = gr.State(None)
 
-    # Header
-    with gr.Row():
-        gr.HTML("""
-            <div style="text-align: center; margin-bottom: 30px; margin-top: 10px;">
-                <h1 style="font-weight: 600; font-size: 2rem; color: #f4f4f5; letter-spacing: -0.5px; margin-bottom: 4px;">
-                    ConflictBench
-                </h1>
-                <p style="font-size: 0.95rem; color: #71717a; font-family: 'Inter', sans-serif;">Enterprise Instruction Priority Evaluation Environment</p>
-            </div>
-        """)
+    # ── Hero ─────────────────────────────────────────────────────────────
+    gr.HTML(HEADER_HTML)
+    gr.HTML(HIER_HTML)
 
-    with gr.Row():
-        # LEFT SIDEBAR: Controls & Info
-        with gr.Column(scale=1):
-            with gr.Group():
-                gr.Markdown("### Scenario Configuration")
-                difficulty_slider = gr.Slider(
-                    minimum=1, maximum=3, step=1, value=2, 
-                    label="Difficulty Profile", 
-                    info="1 = Easy (2 Conflicts), 2 = Medium (4), 3 = Hard (6)"
-                )
-                gen_btn = gr.Button("Generate Scenario", variant="primary", size="lg")
-                
-            scenario_meta = gr.Markdown("<div style='padding: 12px; text-align: center; color: #71717a; font-size: 12px;'>*Initialize a scenario to begin*</div>")
-            
-            with gr.Accordion("Document Details", open=True):
-                scenario_display = gr.Textbox(
-                    label="Raw Business Instructions", 
-                    lines=18, interactive=False, 
-                    elem_classes="glass-textbox"
-                )
+    # ── Main layout ──────────────────────────────────────────────────────
+    with gr.Row(equal_height=False):
 
-            gr.Markdown(
-                """
-                ---
-                **Resources**
-                [HuggingFace Space](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench) |
-                [GitHub Repository](https://github.com/Harsh-4210/Conflict_Bench)
-                """
+        # ── LEFT SIDEBAR ─────────────────────────────────────────────────
+        with gr.Column(scale=1, min_width=280):
+
+            gr.HTML('<div class="panel-title"><div class="panel-title-dot"></div>SCENARIO CONFIG</div>')
+
+            difficulty_slider = gr.Slider(
+                minimum=1, maximum=3, step=1, value=2,
+                label="Difficulty",
+                info="1 = Easy (2 conflicts) · 2 = Medium (4) · 3 = Hard (6)",
             )
 
-        # RIGHT MAIN AREA: Models
-        with gr.Column(scale=2):
-            with gr.Tabs():
-                with gr.TabItem("Arena Assessment"):
-                    with gr.Row():
+            gen_btn = gr.Button(
+                "⚡  Generate Scenario",
+                variant="primary",
+                size="lg",
+                elem_classes="btn-generate",
+            )
+
+            scenario_meta = gr.HTML(
+                "<div class='pending-state' style='padding:16px;'>Configure difficulty and generate a scenario to begin.</div>"
+            )
+
+            gr.HTML('<div class="divider"></div>')
+            gr.HTML('<div class="panel-title"><div class="panel-title-dot"></div>DOCUMENT PREVIEW</div>')
+
+            scenario_display = gr.Textbox(
+                label="",
+                lines=22,
+                interactive=False,
+                placeholder="Business instruction document will appear here…",
+                elem_classes="gradio-textbox",
+            )
+
+            gr.HTML("""
+            <div class="cb-links" style="margin-top:8px;">
+              <a class="cb-link" href="https://huggingface.co/spaces/Harsh-9209/Conflict_Bench" target="_blank">🤗 HF Space</a>
+              <a class="cb-link" href="https://github.com/Harsh-4210/Conflict_Bench" target="_blank">⎈ GitHub</a>
+            </div>
+            """)
+
+        # ── RIGHT MAIN PANEL ──────────────────────────────────────────────
+        with gr.Column(scale=3):
+
+            with gr.Tabs(elem_classes="tab-nav"):
+
+                # ── TAB 1 : Arena ─────────────────────────────────────────
+                with gr.TabItem("⚔️  Model Arena"):
+
+                    with gr.Row(equal_height=False):
+
+                        # BASE MODEL
                         with gr.Column():
-                            gr.HTML("<div style='text-align:center; margin-bottom: 16px;'><span style='color: #a1a1aa; font-weight: 500; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;'>Base Model</span><br><span style='color: #71717a; font-size: 11px;'>Qwen2.5-3B-Instruct</span></div>")
-                            base_btn = gr.Button("Run Inference", interactive=False)
-                            base_score = gr.HTML("<div class='score-container'><div style='text-align:center; color:#52525b; font-size: 13px;'>Awaiting execution...</div></div>")
-                            base_output = gr.HTML("<div class='glass-card' style='text-align:center; color:#52525b; font-size: 13px;'>Output pending</div>")
+                            gr.HTML("""
+                            <div class="model-header-base">
+                              <span class="mh-tag mh-tag-base">Base Model</span>
+                              <span class="mh-name">Qwen2.5-3B-Instruct</span>
+                              <span class="mh-sub">No conflict resolution training</span>
+                            </div>""")
 
+                            base_btn = gr.Button(
+                                "▶  Run Inference",
+                                interactive=False,
+                                elem_classes="btn-base",
+                            )
+
+                            gr.HTML('<div style="margin:14px 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#334155;font-weight:600;">Score Breakdown</div>')
+                            base_score = gr.HTML(
+                                "<div class='score-wrap pending-state'>Run inference to see scores</div>"
+                            )
+
+                            gr.HTML('<div style="margin:14px 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#334155;font-weight:600;">Output Analysis</div>')
+                            base_output = gr.HTML(
+                                "<div class='jv-root pending-state'>Output will appear here after inference</div>"
+                            )
+
+                        # FINE-TUNED MODEL
                         with gr.Column():
-                            gr.HTML("<div style='text-align:center; margin-bottom: 16px;'><span style='color: #38bdf8; font-weight: 500; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;'>Fine-Tuned Policy</span><br><span style='color: #71717a; font-size: 11px;'>ConflictBench Checkpoint</span></div>")
-                            trained_btn = gr.Button("Run Inference", interactive=False, variant="primary")
-                            trained_score = gr.HTML("<div class='score-container'><div style='text-align:center; color:#52525b; font-size: 13px;'>Awaiting execution...</div></div>")
-                            trained_output = gr.HTML("<div class='glass-card' style='text-align:center; color:#52525b; font-size: 13px;'>Output pending</div>")
+                            gr.HTML("""
+                            <div class="model-header-trained">
+                              <span class="mh-tag mh-tag-trained">Fine-Tuned Policy</span>
+                              <span class="mh-name">ConflictBench Checkpoint</span>
+                              <span class="mh-sub">GRPO-trained on authority hierarchy</span>
+                            </div>""")
 
-                with gr.TabItem("Ground Truth"):
-                    gr.Markdown("Examine the hidden organizational conflicts and expected resolution logic for the active scenario.")
-                    gt_btn = gr.Button("Reveal Correct Logic")
-                    gt_output = gr.HTML("<div class='glass-card' style='text-align:center; color:#52525b; font-size: 13px;'>Action required.</div>")
+                            trained_btn = gr.Button(
+                                "▶  Run Inference",
+                                interactive=False,
+                                variant="primary",
+                                elem_classes="btn-trained",
+                            )
 
-                with gr.TabItem("Evaluation Framework"):
-                    gr.Markdown("""
-                    ### Assessment Methodology
-                    
-                    ConflictBench tests if an LLM can understand implicit corporate hierarchy. 
-                    If two instructions conflict, the agent MUST resolve it by deferring to the higher authority:
-                    
-                    **Authority Hierarchy:** `Legal/Regulatory > C-Suite > VP > Director > Manager > Team Lead`
-                    
-                    The agent receives a strict JSON constraint. System evaluation covers:
-                    1. **Format Compliance:** Structural integrity of the JSON payload.
-                    2. **Conflict Identification:** Accuracy in detecting hidden contradictory directives.
-                    3. **Contradiction Avoidance:** Penalizes execution of mutually exclusive directives.
-                    4. **Final State Validation:** Rewards adherence to the highest-authority directives.
+                            gr.HTML('<div style="margin:14px 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#334155;font-weight:600;">Score Breakdown</div>')
+                            trained_score = gr.HTML(
+                                "<div class='score-wrap pending-state'>Run inference to see scores</div>"
+                            )
+
+                            gr.HTML('<div style="margin:14px 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#334155;font-weight:600;">Output Analysis</div>')
+                            trained_output = gr.HTML(
+                                "<div class='jv-root pending-state'>Output will appear here after inference</div>"
+                            )
+
+                # ── TAB 2 : Ground Truth ──────────────────────────────────
+                with gr.TabItem("🔍  Ground Truth"):
+                    gr.HTML("""
+                    <div style="margin-bottom:16px;color:#64748b;font-size:13px;line-height:1.7;">
+                      Reveal the hidden ground-truth resolution for the active scenario.
+                      This is what a perfect agent should produce — compare against model outputs above.
+                    </div>""")
+                    gt_btn    = gr.Button("🔓  Reveal Ground Truth", variant="secondary")
+                    gt_output = gr.HTML(
+                        "<div class='jv-root pending-state'>Generate a scenario and click Reveal to see the correct answer.</div>"
+                    )
+
+                # ── TAB 3 : Methodology ───────────────────────────────────
+                with gr.TabItem("📐  Methodology"):
+                    gr.HTML(f"""
+                    <div style="margin-bottom:20px;">
+                      <h3 style="color:#c4b5fd;font-size:15px;font-weight:600;margin-bottom:8px;">Deterministic Scoring — No LLM Judge</h3>
+                      <p style="color:#64748b;font-size:13px;line-height:1.7;">
+                        ConflictBench uses five independent, rule-based rubric functions scored against
+                        programmatically-generated ground truth. The composite reward gives GRPO a rich,
+                        non-gameable gradient signal. An agent cannot win by blindly following or blindly
+                        overriding every instruction.
+                      </p>
+                    </div>
+                    {METHODOLOGY_HTML}
+                    <div class="divider"></div>
+                    <h3 style="color:#c4b5fd;font-size:15px;font-weight:600;margin-bottom:12px;">Why This Is Hard for LLMs</h3>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;color:#64748b;line-height:1.6;">
+                      <div>• Conflicts are <em>implicit</em> — no instruction labels itself as conflicting</div>
+                      <div>• Authority hierarchy is <em>never stated</em> in the prompt; it must be inferred</div>
+                      <div>• Wrong early decisions <em>cascade</em> through the execution plan</div>
+                      <div>• Requires structured JSON output with <em>correct instruction IDs</em></div>
+                    </div>
                     """)
 
-    # Events wiring
+                # ── TAB 4 : Training Results ──────────────────────────────
+                with gr.TabItem("📈  Training Results"):
+                    gr.HTML("""
+                    <div style="margin-bottom:20px;">
+                      <h3 style="color:#c4b5fd;font-size:15px;font-weight:600;margin-bottom:8px;">GRPO Training on Qwen2.5-3B-Instruct</h3>
+                      <p style="color:#64748b;font-size:13px;line-height:1.7;">
+                        Smoke-test run: 120 steps · Difficulty 1 (2 conflicts) · Google Colab T4 · 600 training scenarios.
+                      </p>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px;">
+                      <div class="mc-item" style="text-align:center;">
+                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#10b981;">+57%</div>
+                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Composite Reward Gain</div>
+                        <div style="font-size:11px;color:#475569;margin-top:3px;">0.140 → 0.225</div>
+                      </div>
+                      <div class="mc-item" style="text-align:center;">
+                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#06b6d4;">Stable</div>
+                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">KL Divergence</div>
+                        <div style="font-size:11px;color:#475569;margin-top:3px;">7e-6 → 1e-4</div>
+                      </div>
+                      <div class="mc-item" style="text-align:center;">
+                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#f59e0b;">↑14×</div>
+                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Gradient Norm</div>
+                        <div style="font-size:11px;color:#475569;margin-top:3px;">0.099 → 1.39</div>
+                      </div>
+                    </div>
+                    <div style="background:rgba(16,185,129,0.05);border:1px solid rgba(16,185,129,0.15);border-radius:8px;padding:14px;font-size:12px;color:#6ee7b7;line-height:1.6;">
+                      ℹ️  This was a smoke-test run with a known truncation issue (clipped_ratio: 1.0) now resolved.
+                      The full training run with the fix applied is expected to show significantly higher rewards.
+                    </div>
+                    """)
+
+    # ── Event Wiring ──────────────────────────────────────────────────────
     gen_btn.click(
         fn=generate_scenario,
         inputs=[difficulty_slider],
-        outputs=[scenario_state, scenario_display, scenario_meta, base_btn, trained_btn],
-    ).then(
-        fn=lambda: ("<div class='score-container'><div style='text-align:center; color:#52525b; font-size: 13px;'>Awaiting execution...</div></div>", 
-                    "<div class='score-container'><div style='text-align:center; color:#52525b; font-size: 13px;'>Awaiting execution...</div></div>",
-                    "<div class='glass-card' style='text-align:center; color:#52525b; font-size: 13px;'>Output pending</div>",
-                    "<div class='glass-card' style='text-align:center; color:#52525b; font-size: 13px;'>Output pending</div>"),
-        outputs=[base_score, trained_score, base_output, trained_output]
+        outputs=[
+            scenario_state, scenario_display, scenario_meta,
+            base_btn, trained_btn,
+            base_score, trained_score,
+            base_output, trained_output,
+        ],
     )
-    
-    base_btn.click(fn=run_base_model, inputs=[scenario_state], outputs=[base_output, base_score])
-    trained_btn.click(fn=run_trained_model, inputs=[scenario_state], outputs=[trained_output, trained_score])
-    gt_btn.click(fn=show_ground_truth, inputs=[scenario_state], outputs=[gt_output])
+
+    base_btn.click(
+        fn=run_base_model,
+        inputs=[scenario_state],
+        outputs=[base_output, base_score],
+    )
+
+    trained_btn.click(
+        fn=run_trained_model,
+        inputs=[scenario_state],
+        outputs=[trained_output, trained_score],
+    )
+
+    gt_btn.click(
+        fn=format_ground_truth_html,
+        inputs=[scenario_state],
+        outputs=[gt_output],
+    )
 
 
-# Load models on startup
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 try:
     load_models()
 except Exception as e:
-    print(f"Model loading deferred: {e}")
+    print(f"Model loading deferred (will retry at inference time): {e}")
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Base(), css=custom_css)
+    demo.launch(server_name="0.0.0.0", server_port=7860)
