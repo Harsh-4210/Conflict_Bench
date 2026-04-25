@@ -1,0 +1,6 @@
+gradio>=4.0.0
+transformers
+trl
+datasets
+huggingface_hub
+matplotlib

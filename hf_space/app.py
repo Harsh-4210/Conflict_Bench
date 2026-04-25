@@ -90,11 +90,11 @@ with gr.Blocks(css=CSS, title="ConflictBench GRPO Trainer", theme=gr.themes.Soft
             |-----------|-------|
             | Model | Qwen2.5-3B-Instruct |
             | Method | GRPO (6 rubrics) |
-            | Scenarios | 400 train / 60 eval |
-            | Curriculum | 80% D1 / 20% D2 |
-            | LoRA rank | 32 |
-            | Epochs | 3 |
-            | β (KL) | 0.02 |
+            | Scenarios | 120 train / 20 eval |
+            | Curriculum | 100% Difficulty 1 |
+            | LoRA rank | 16 |
+            | Epochs | 2 |
+            | β (KL) | 0.04 |
             """)
             start_btn = gr.Button("🚀 Start Training", variant="primary", size="lg")
             status = gr.Textbox(label="Status", interactive=False, lines=2)

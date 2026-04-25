@@ -36,22 +36,24 @@ def clone_repo():
 # Config
 # ---------------------------------------------------------------------------
 
-TRAIN_SCENARIOS = 400
-EVAL_SCENARIOS = 60
-NUM_EPOCHS = 3
+TRAIN_SCENARIOS = 120
+EVAL_SCENARIOS = 20
+NUM_EPOCHS = 2
 MAX_SEQ_LENGTH = 4096
-MAX_NEW_TOKENS = 768
+MAX_NEW_TOKENS = 1024
 MAX_PROMPT_LENGTH = 3200
-LEARNING_RATE = 3e-6
+LEARNING_RATE = 5e-6
 WARMUP_RATIO = 0.05
-BETA = 0.02
+BETA = 0.04
 SEED = 42
-TRAIN_DIFFICULTY_MIX = {1: 0.8, 2: 0.2}
+FORCE_DIFFICULTY = 1
+TRAIN_DIFFICULTY_MIX = {1: 1.0} if FORCE_DIFFICULTY else {1: 0.5, 2: 0.4, 3: 0.1}
+EVAL_DIFFICULTY_MIX = {1: 0.5, 2: 0.3, 3: 0.2}
 HF_REPO_ID = os.getenv("HF_REPO_ID", "Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora")
 HF_TOKEN = os.getenv("HF_TOKEN", None)
-SAVE_STEPS = 50
+SAVE_STEPS = 100
 EVAL_STEPS = 50
-LOGGING_STEPS = 5
+LOGGING_STEPS = 10
 
 
 def detect_gpu_config():
@@ -67,8 +69,8 @@ def detect_gpu_config():
     config = {
         "model_name": "unsloth/Qwen2.5-3B-Instruct-bnb-4bit",
         "load_in_4bit": True,
-        "batch_size": 1, "gradient_accumulation": 8,
-        "num_generations": 4, "lora_r": 32,
+        "batch_size": 1, "gradient_accumulation": 4,
+        "num_generations": 4, "lora_r": 16,
         "dtype": compute_dtype,
     }
     if vram_gb >= 40:
@@ -92,14 +94,17 @@ def build_dataset(n_train, n_eval):
     gen = ScenarioGenerator(seed=SEED)
     log.info(f"Generating {n_train} train + {n_eval} eval scenarios...")
 
-    def make_records(n, difficulty):
+    def make_records(n, difficulty_mix):
         records, attempts = [], 0
+        MAX_PROMPT_CHARS = 3000
         while len(records) < n and attempts < n * 3:
             attempts += 1
-            diff = (difficulty if isinstance(difficulty, int)
-                    else random.choices(list(difficulty.keys()), weights=list(difficulty.values()))[0])
+            if FORCE_DIFFICULTY is not None:
+                diff = FORCE_DIFFICULTY
+            else:
+                diff = random.choices(list(difficulty_mix.keys()), weights=list(difficulty_mix.values()))[0]
             scenario = gen.generate(difficulty=diff)
-            if len(scenario.prompt) > 4000:
+            if len(scenario.prompt) > MAX_PROMPT_CHARS:
                 continue
             records.append({
                 "prompt": [{"role": "user", "content": scenario.prompt}],
@@ -114,10 +119,12 @@ def build_dataset(n_train, n_eval):
                                      for ins in scenario.instructions],
                 }),
             })
+        if len(records) < n:
+            log.warning(f"Only generated {len(records)}/{n} records after {attempts} attempts.")
         return records
 
     train_records = make_records(n_train, TRAIN_DIFFICULTY_MIX)
-    eval_records = make_records(n_eval, {1: 0.3, 2: 0.5, 3: 0.2})
+    eval_records = make_records(n_eval, EVAL_DIFFICULTY_MIX)
     log.info(f"Dataset ready: {len(train_records)} train, {len(eval_records)} eval")
     return Dataset.from_list(train_records), Dataset.from_list(eval_records)
 
