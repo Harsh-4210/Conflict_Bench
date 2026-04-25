@@ -106,7 +106,7 @@ def detect_gpu_config():
 
 TRAIN_SCENARIOS = 400        # enough for GRPO convergence with fixed bugs
 EVAL_SCENARIOS = 60          # larger eval set for reliable metrics
-NUM_EPOCHS = 3
+NUM_EPOCHS = 2
 MAX_SEQ_LENGTH = 4096
 MAX_NEW_TOKENS = 768         # avg completion ~286 tokens, 768 gives headroom without waste
 MAX_PROMPT_LENGTH = 3200
