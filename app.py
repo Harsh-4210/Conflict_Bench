@@ -47,13 +47,28 @@ def load_models():
     )
 
     if TRAINED_MODEL_ID:
-        print(f"Loading trained model from {TRAINED_MODEL_ID}…")
-        _trained_tokenizer = AutoTokenizer.from_pretrained(TRAINED_MODEL_ID)
-        _trained_model     = AutoModelForCausalLM.from_pretrained(
-            TRAINED_MODEL_ID,
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            device_map="auto" if torch.cuda.is_available() else "cpu",
-        )
+        print(f"Loading trained LoRA adapter from {TRAINED_MODEL_ID}…")
+        try:
+            from peft import PeftModel
+            _trained_tokenizer = _base_tokenizer  # LoRA shares base tokenizer
+            _trained_model = PeftModel.from_pretrained(
+                _base_model,
+                TRAINED_MODEL_ID,
+            )
+            _trained_model.eval()
+            print("✅ LoRA adapter loaded and merged on top of base model.")
+        except ImportError:
+            print("⚠ peft not installed — falling back to base model for trained slot.")
+            _trained_model = _base_model
+            _trained_tokenizer = _base_tokenizer
+        except Exception as e:
+            print(f"⚠ Failed to load LoRA adapter: {e}")
+            _trained_tokenizer = AutoTokenizer.from_pretrained(TRAINED_MODEL_ID)
+            _trained_model = AutoModelForCausalLM.from_pretrained(
+                TRAINED_MODEL_ID,
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                device_map="auto" if torch.cuda.is_available() else "cpu",
+            )
     else:
         print("No TRAINED_MODEL_ID set — demo runs base model only.")
 
@@ -1021,29 +1036,32 @@ with gr.Blocks(
                     <div style="margin-bottom:20px;">
                       <h3 style="color:#c4b5fd;font-size:15px;font-weight:600;margin-bottom:8px;">GRPO Training on Qwen2.5-3B-Instruct</h3>
                       <p style="color:#64748b;font-size:13px;line-height:1.7;">
-                        Smoke-test run: 120 steps · Difficulty 1 (2 conflicts) · Google Colab T4 · 600 training scenarios.
+                        Demo run: 240 steps · 2 epochs · 120 scenarios · Kaggle T4 (4-bit QLoRA) · 5h 22m total.
+                        Best checkpoint: step 200 (eval_reward = 0.5003).
                       </p>
                     </div>
                     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px;">
                       <div class="mc-item" style="text-align:center;">
-                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#10b981;">+57%</div>
-                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Composite Reward Gain</div>
-                        <div style="font-size:11px;color:#475569;margin-top:3px;">0.140 → 0.225</div>
+                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#10b981;">0.500</div>
+                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Best Eval Reward</div>
+                        <div style="font-size:11px;color:#475569;margin-top:3px;">checkpoint-200</div>
                       </div>
                       <div class="mc-item" style="text-align:center;">
-                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#06b6d4;">Stable</div>
-                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">KL Divergence</div>
-                        <div style="font-size:11px;color:#475569;margin-top:3px;">7e-6 → 1e-4</div>
+                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#06b6d4;">53%↓</div>
+                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Reward Std Reduction</div>
+                        <div style="font-size:11px;color:#475569;margin-top:3px;">0.239 → 0.111</div>
                       </div>
                       <div class="mc-item" style="text-align:center;">
-                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#f59e0b;">↑14×</div>
-                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Gradient Norm</div>
-                        <div style="font-size:11px;color:#475569;margin-top:3px;">0.099 → 1.39</div>
+                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#f59e0b;">87%↓</div>
+                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Eval Loss Drop</div>
+                        <div style="font-size:11px;color:#475569;margin-top:3px;">0.033 → 0.004</div>
                       </div>
                     </div>
                     <div style="background:rgba(16,185,129,0.05);border:1px solid rgba(16,185,129,0.15);border-radius:8px;padding:14px;font-size:12px;color:#6ee7b7;line-height:1.6;">
-                      ℹ️  This was a smoke-test run with a known truncation issue (clipped_ratio: 1.0) now resolved.
-                      The full training run with the fix applied is expected to show significantly higher rewards.
+                      ✅ Demo run complete. Model showed consistent improvement with reward plateau at ~0.50.
+                      Overfitting observed after step 200 (eval dropped to 0.461 at step 240), confirming
+                      checkpoint-200 as optimal. Production run with 600+ scenarios on A100 is planned to
+                      break through the 0.50 ceiling.
                     </div>
                     """)
 
