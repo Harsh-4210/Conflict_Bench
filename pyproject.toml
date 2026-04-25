@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-conflictbench"
+version = "1.0.0"
+description = "ConflictBench: Instruction Priority Resolver for OpenEnv"
+authors = [
+    {name = "Harsh Jain"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core[core]>=0.2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+# Server entry point - enables running via: uv run --project . server
+server = "conflictbench.server.app:main"
+
+[project.entry-points."openenv.environments"]
+conflictbench = "conflictbench.conflict_bench:ConflictBenchEnv"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["conflictbench", "conflictbench.server"]
+package-dir = { "conflictbench" = ".", "conflictbench.server" = "server" }

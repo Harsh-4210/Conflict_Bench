@@ -6,6 +6,10 @@ __pycache__/
 # Output directories
 conflictbench-grpo-output/
 
+# Build artifacts
+*.egg-info/
+.venv/
+
 # OS generated files
 .DS_Store
 .DS_Store?
