@@ -2,7 +2,7 @@
 
 > **OpenEnv Hackathon India 2026** | Theme 2: Long-Horizon Instruction Following | Scale AI Sub-theme Bonus
 
-[![HuggingFace Space](https://img.shields.io/badge/🤗%20HF%20Space-ConflictBench-blue)](https://huggingface.co/spaces/YOUR_USERNAME/conflictbench)
+[![HuggingFace Space](https://img.shields.io/badge/🤗%20HF%20Space-ConflictBench-blue)](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench)
 [![Colab Notebook](https://img.shields.io/badge/📓%20Colab-Training%20Notebook-orange)](YOUR_COLAB_LINK)
 [![Blog / Video](https://img.shields.io/badge/📝%20Blog-Write--up-green)](YOUR_BLOG_OR_VIDEO_LINK)
 

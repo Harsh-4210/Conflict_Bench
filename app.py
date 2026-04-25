@@ -234,9 +234,9 @@ with gr.Blocks(
     gr.Markdown(
         """
         ---
-        **Environment:** [HuggingFace Space](https://huggingface.co/spaces/your-username/conflictbench) |
-        **Code:** [GitHub](https://github.com/your-username/conflictbench) |
-        **Blog:** [HF Blog Post](https://huggingface.co/blog/your-username/conflictbench)
+        **Environment:** [HuggingFace Space](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench) |
+        **Code:** [GitHub](https://github.com/Harsh-4210/Conflict_Bench) |
+        **Blog:** [HF Blog Post](https://huggingface.co/blog/Harsh-9209/conflictbench)
         """
     )
 
