@@ -170,7 +170,7 @@ ScenarioGenerator → ConflictBenchEnv → Verifier → GRPO Trainer
 | Epochs | 2 | Reward peaks around epoch 2; more risks KL drift |
 | Learning rate | 3e-6 | Conservative; preserves instruction following |
 | β (KL penalty) | 0.04 | Prevents excessive drift; 0.02 was insufficient |
-| num_generations | 4–6 | 4 minimum; 6 preferred on L40S |
+| num_generations | 4–6 | 4 minimum; 6 preferred on A100 |
 
 ---
 
@@ -215,7 +215,7 @@ All targets exceeded.
 | Reward hacking via length | Low | Medium | Efficiency rubric penalises over-inclusion |
 | JSON format memorisation without semantic understanding | Medium | High | Conflict ID F1 requires correct instruction IDs |
 | KL divergence runaway | Medium | Medium | β=0.04 provides sufficient penalty |
-| Unsloth kernel dtype bug on full-precision path | High (L40S) | Critical | Always use 4-bit quantisation |
+| Unsloth kernel dtype bug on full-precision path | High (A100) | Critical | Always use 4-bit quantisation |
 | Kaggle session timeout mid-training | High | Medium | Checkpoint-every-50-steps + resume support |
 
 ---

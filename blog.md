@@ -46,7 +46,7 @@ GRPO works by generating multiple completions for the same prompt, scoring each,
 
 This is exactly right for authority resolution. The model does not need to know what the correct answer looks like. It needs to learn to generate better answers than its own average. The reward function provides the signal that defines "better," and because the reward is fully deterministic and rule-based, the gradient is clean — there is no ambiguity about whether a completion deserved its score.
 
-We used Unsloth's optimised GRPO implementation with TRL's GRPOTrainer, applied to Qwen2.5-3B-Instruct with 4-bit quantisation and LoRA (rank 32, targeting all attention and MLP projections). The full training run on an L40S 48GB GPU takes approximately 8 hours for 400 scenarios across 2 epochs.
+We used Unsloth's optimised GRPO implementation with TRL's GRPOTrainer, applied to Qwen2.5-3B-Instruct with 4-bit quantisation and LoRA (rank 32, targeting all attention and MLP projections). The full training run on an A100 48GB GPU takes approximately 8 hours for 400 scenarios across 2 epochs.
 
 ---
 
@@ -70,7 +70,7 @@ Three common reward-gaming strategies all fail against this rubric set. Always f
 
 ## What the Training Curves Show
 
-The results from Run 2 — 400 training scenarios, 2 epochs, L40S 48GB — are instructive.
+The results from Run 2 — 400 training scenarios, 2 epochs, A100 48GB — are instructive.
 
 The baseline Qwen2.5-3B-Instruct achieves a composite reward of 0.14 on this task with no training. This is low, but not zero: the model can produce valid JSON and occasionally resolves conflicts correctly by chance.
 

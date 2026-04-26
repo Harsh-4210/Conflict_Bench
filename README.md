@@ -5,7 +5,7 @@ colorFrom: indigo
 colorTo: purple
 sdk: gradio
 python_version: "3.10"
-app_file: hf_space_l40s/app.py
+app_file: hf_space_a100/app.py
 pinned: true
 license: mit
 ---
@@ -138,7 +138,7 @@ Partial credit via F1 scoring gives GRPO a dense, informative gradient signal at
 |---|---|---|---|
 | Baseline (no training) | — | 0.14 | Qwen2.5-3B zero-shot |
 | Run 1 warmup | 0–120 | 0.14 → 0.22 | Colab T4, 600 scenarios, 4-bit |
-| Run 2 (production) | 0–500 | 0.37 → 0.48 | L40S 48GB, 400 scenarios, 2 epochs |
+| Run 2 (production) | 0–500 | 0.37 → 0.48 | A100 48GB, 400 scenarios, 2 epochs |
 | Run 2 peak | ~step 250 | 0.50 | Best checkpoint |
 
 ---
@@ -191,7 +191,7 @@ Partial credit via F1 scoring gives GRPO a dense, informative gradient signal at
 │  Max tokens:   768 completion / 3200 prompt                 │
 │  Epochs:       2–3                                          │
 │  LR:           3 × 10⁻⁶  |  Warmup: 5%  |  β (KL): 0.04   │
-│  Hardware:     L40S 48GB (~8h) / L4 24GB (~14h)            │
+│  Hardware:     A100 48GB (~8h) / L4 24GB (~14h)            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -199,7 +199,7 @@ Partial credit via F1 scoring gives GRPO a dense, informative gradient signal at
 
 ## Results
 
-> All results from Run 2 (L40S 48GB, 400 scenarios, 2 epochs, 4-bit quantised Qwen2.5-3B).
+> All results from Run 2 (A100 48GB, 400 scenarios, 2 epochs, 4-bit quantised Qwen2.5-3B).
 
 ### Training Curves (Run 2)
 
@@ -233,9 +233,9 @@ This repository contains two training scripts serving different purposes:
 | Script | Location | Purpose |
 |---|---|---|
 | `train_grpo.py` | Root directory | Local training, full configurability, research use |
-| `train.py` | `hf_space_l40s/` | HF Spaces + Colab training, Gradio UI integration, production use |
+| `train.py` | `hf_space_a100/` | HF Spaces + Colab training, Gradio UI integration, production use |
 
-The HF Spaces script (`hf_space_l40s/train.py`) is pre-configured for the L40S GPU and includes the Gradio dashboard for live monitoring. The root script (`train_grpo.py`) exposes all hyperparameters directly and is intended for local or Kaggle training with more manual control.
+The HF Spaces script (`hf_space_a100/train.py`) is pre-configured for the A100 GPU and includes the Gradio dashboard for live monitoring. The root script (`train_grpo.py`) exposes all hyperparameters directly and is intended for local or Kaggle training with more manual control.
 
 ---
 
@@ -354,7 +354,7 @@ print("Patched for quick eval run (60 scenarios, 1 epoch, 4 generations)")
 print("Expected runtime: ~30 minutes on T4, ~15 minutes on L4/A10G")
 print()
 print("NOTE: Reward values from this run will be lower than reported results.")
-print("Full results used 400 scenarios × 2 epochs on L40S 48GB.")
+print("Full results used 400 scenarios × 2 epochs on A100 48GB.")
 ```
 
 Then run normally:
@@ -378,7 +378,7 @@ Conflict_Bench/
 ├── openenv.yaml               # OpenEnv manifest
 ├── requirements.txt           # Python dependencies
 │
-├── hf_space_l40s/             # HF Spaces deployment package
+├── hf_space_a100/             # HF Spaces deployment package
 │   ├── app.py                 # Gradio training dashboard (live log streaming)
 │   ├── train.py               # Training script optimised for HF Spaces / Colab
 │   └── README.md              # HF Spaces card

@@ -4,7 +4,7 @@
 
 | Platform | GPU | VRAM | Est. Time | Cost | Recommended For |
 |---|---|---|---|---|---|
-| HF Spaces (L40S) | L40S | 48GB | ~8h | ~$14 | Production runs |
+| HF Spaces (A100) | A100 | 48GB | ~8h | ~$14 | Production runs |
 | HF Spaces (L4) | L4 | 24GB | ~14h | ~$11 | Production runs |
 | Google Colab Pro | L4 | 24GB | ~14h | ~$10 | Experimentation |
 | Google Colab Pro+ | A100 | 40GB | ~6h | ~$20 | Fast iteration |
@@ -17,7 +17,7 @@
 
 This repository has two training entry points:
 
-**`hf_space_l40s/train.py`** — for HF Spaces and Colab. Integrates with the Gradio dashboard, streams live logs, auto-uploads to HF Hub. Pre-configured for L40S but auto-detects GPU.
+**`hf_space_a100/train.py`** — for HF Spaces and Colab. Integrates with the Gradio dashboard, streams live logs, auto-uploads to HF Hub. Pre-configured for A100 but auto-detects GPU.
 
 **`train_grpo.py`** — for local machines, Kaggle, and research use. Exposes all hyperparameters directly. More verbose logging. Supports checkpoint resume.
 
@@ -33,7 +33,7 @@ EVAL_SCENARIOS  = 60        # held-out evaluation scenarios
 NUM_EPOCHS      = 2         # full passes over the training set
 LEARNING_RATE   = 3e-6      # conservative; prevents catastrophic forgetting
 BETA            = 0.04      # KL penalty; 0.02 causes excessive drift (use 0.04+)
-num_generations = 4         # GRPO group size; 6 recommended on L40S
+num_generations = 4         # GRPO group size; 6 recommended on A100
 MAX_NEW_TOKENS  = 768       # completion budget; average ~300 tokens in practice
 MAX_PROMPT_LENGTH = 3200    # prompt budget; generator enforces 4000 char limit
 SAVE_STEPS      = 50        # checkpoint frequency

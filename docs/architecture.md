@@ -192,7 +192,7 @@ Next Episode
 | `generator.py` | ~500 | Scenario generation with all templates |
 | `verifier.py` | ~300 | Five rubric functions + composite scorer |
 | `train_grpo.py` | ~350 | Root training script (local/Kaggle) |
-| `hf_space_l40s/train.py` | ~400 | HF Spaces/Colab training with Gradio integration |
-| `hf_space_l40s/app.py` | ~130 | Gradio dashboard |
+| `hf_space_a100/train.py` | ~400 | HF Spaces/Colab training with Gradio integration |
+| `hf_space_a100/app.py` | ~130 | Gradio dashboard |
 | `diagnose_tokens.py` | ~80 | Token budget analysis utility |
 | `app.py` | ~100 | Local demo (base vs fine-tuned comparison) |

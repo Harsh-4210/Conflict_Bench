@@ -70,8 +70,8 @@ CSS = """
                      color: #c9d1d9 !important; }
 """
 
-with gr.Blocks(title="ConflictBench GRPO Trainer (L40S)") as demo:
-    gr.Markdown("# ⚔️ ConflictBench — GRPO Training Dashboard (L40S Target)", elem_classes="main-title")
+with gr.Blocks(title="ConflictBench GRPO Trainer (A100)") as demo:
+    gr.Markdown("# ⚔️ ConflictBench — GRPO Training Dashboard (A100 Target)", elem_classes="main-title")
     gr.Markdown("**One-click** production GRPO training script mapped to Run 2 parameters. "
                 "Automatically streams logs and generates plots.")
 

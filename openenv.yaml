@@ -11,10 +11,10 @@ description: >
 runtime: python-3.10
 
 # HF Spaces entry point (Gradio dashboard + training UI)
-entry_point: hf_space_l40s/app.py
+entry_point: hf_space_a100/app.py
 
 # HF Spaces / Colab training script
-training_entry: hf_space_l40s/train.py
+training_entry: hf_space_a100/train.py
 
 # Root training script (local / Kaggle / research — full configurability)
 local_training_entry: train_grpo.py
@@ -66,7 +66,7 @@ training:
   max_completion_tokens: 768
   max_prompt_tokens: 3200
   hardware:
-    - L40S-48GB  # ~8h
+    - A100-48GB  # ~8h
     - L4-24GB    # ~14h
     - A10G-24GB  # ~12h
     - T4-16GB    # ~28h (2 Kaggle sessions)

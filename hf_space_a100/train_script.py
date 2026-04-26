@@ -1,6 +1,6 @@
 """
-ConflictBench — GRPO Training Script for HF Space (L40S Target)
-Tailored for NVIDIA L40S (48GB VRAM)
+ConflictBench — GRPO Training Script for HF Space (A100 Target)
+Tailored for NVIDIA A100 (48GB VRAM)
 """
 
 import os
