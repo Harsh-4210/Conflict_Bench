@@ -1,3 +1,13 @@
+---
+title: ConflictBench
+emoji: ⚔️
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+python_version: "3.10"
+app_file: app.py
+pinned: false
+---
 # ConflictBench: Authority-Aware Business Reasoning
 
 > **The first OpenEnv-compliant Reinforcement Learning framework dedicated to resolving multi-stakeholder business instruction conflicts using GRPO.**
