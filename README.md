@@ -203,7 +203,7 @@ Partial credit via F1 scoring gives GRPO a dense, informative gradient signal at
 
 ### Training Curves (Run 2)
 
-![Final Metrics Dashboard](./assets/ultimate_metrics_dashboard.png)
+![Final Metrics Dashboard](./assets/four_panel_training_metrics.png)
 
 *Four-panel dashboard: reward curve (top-left), GRPO policy loss (top-right), KL divergence from base policy (bottom-left), average reasoning length in tokens (bottom-right).*
 
@@ -224,9 +224,9 @@ The stable reasoning length (~300 tokens throughout training) confirms the model
 
 ### Key Discoveries (Slide Deck)
 
-![Breakthrough](./assets/slide_1_breakthrough.png)
-![Efficiency](./assets/slide_2_efficiency.png)
-![Stability](./assets/slide_3_stability.png)
+![Breakthrough](./assets/reward_improvement_breakthrough.png)
+![Efficiency](./assets/inverse_scaling_efficiency.png)
+![Stability](./assets/kl_divergence_stability.png)
 
 > **Note on checkpoint selection:** The best checkpoint is step ~250 (reward 0.50), not the final step. If evaluating this model, use `checkpoint-250`.
 
