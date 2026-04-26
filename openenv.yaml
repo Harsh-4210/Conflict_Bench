@@ -1,6 +1,15 @@
 spec_version: 1
-name: conflictbench
-type: space
-runtime: fastapi
-app: server.app:app
-port: 8000
+name: ConflictBench
+type: reinforcement_learning
+description: Authority-aware business reasoning using GRPO.
+runtime: python-3.10
+entry_point: hf_space_l40s/app.py
+training_entry: hf_space_l40s/train_script.py
+framework:
+  - Unsloth
+  - TRL
+  - PyTorch
+metadata:
+  version: 1.0.0
+  author: Harsh Jain
+  competition: OpenEnv Hackathon India 2026

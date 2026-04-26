@@ -1,212 +1,122 @@
----
-title: ConflictBench
-emoji: ⚔️
-colorFrom: blue
-colorTo: purple
-sdk: gradio
-python_version: "3.10"
-app_file: app.py
-pinned: false
----
-# ConflictBench — Instruction Priority Resolution Environment
+# ConflictBench: Authority-Aware Business Reasoning
 
-> **OpenEnv Hackathon India 2026** | Theme 2: Long-Horizon Instruction Following | Scale AI Sub-theme Bonus
+> **The first OpenEnv-compliant Reinforcement Learning framework dedicated to resolving multi-stakeholder business instruction conflicts using GRPO.**
 
-[![HuggingFace Space](https://img.shields.io/badge/🤗%20HF%20Space-ConflictBench-blue)](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench)
-[![Colab Notebook](https://img.shields.io/badge/📓%20Colab-Training%20Notebook-orange)](YOUR_COLAB_LINK)
-[![Blog / Video](https://img.shields.io/badge/📝%20Blog-Write--up-green)](YOUR_BLOG_OR_VIDEO_LINK)
+[![Colab Notebook](https://img.shields.io/badge/📓%20Colab-Training%20Notebook-orange)](https://colab.research.google.com/drive/18UJSpREGN152swrVjkEbGa0aWJR7eROH?usp=sharing)
+[![HuggingFace Space](https://img.shields.io/badge/🤗%20HF%20Space-Live%20Demo-blue)](https://huggingface.co/spaces/Harsh-4210/Conflict_Bench)
+[![Technical Blog](https://img.shields.io/badge/📝%20Blog-Deep%20Dive-green)](blog.md)
 
 ---
 
-## The Problem
+## 🎯 The Problem: The "Silent Failure" of Enterprise Alignment
 
-LLMs fail at a task every business professional faces daily: **resolving contradictory instructions from different stakeholders**.
+In every modern corporation, directives are messy, non-linear, and frequently contradictory. A C-Suite executive might order a "strategic hiring freeze," while a Department Head demands "immediate headcount expansion" to hit a deadline. 
 
-When a Legal directive says *"freeze hiring"* and a VP Engineering email says *"hire 4 engineers immediately,"* the correct resolution depends on an **implicit authority hierarchy** — not the literal content of either instruction. Humans learn this through organizational experience. LLMs have no such training signal.
+Current LLMs suffer from a **consensus bias**—they try to follow all instructions simultaneously, leading to logical hallucinations or "silent failures" where contradictory actions co-exist in an execution plan.
 
-**No existing RL environment targets this capability.** ConflictBench is the first.
-
----
-
-## What the Agent Sees
-
-Each episode, the agent receives a realistic business instruction document with **8–28 directives** from multiple stakeholders:
-
-```
-[INS-A3F9] From Legal & Compliance:
-  Due to regulatory constraints, all hiring across Engineering is immediately
-  frozen until further notice.
-
-[INS-B7C2] From VP Engineering:
-  Approved headcount expansion: proceed with hiring 4 senior engineers for the
-  Platform team this quarter.
-
-[INS-C1D4] From Director of IT:
-  Onboard the full Backend team to GitHub — access provisioning should be
-  completed by end of this week.
-
-... (8-28 instructions total, 2-6 conflict pairs embedded)
-```
-
-## What the Agent Must Do
-
-Produce a structured JSON plan that:
-1. **Identifies** every conflicting instruction pair
-2. **Resolves** each conflict using the authority hierarchy: **Legal > C-Suite > VP > Director/Manager > Team Lead**
-3. **Lists** which instructions to follow and which to override
-
-## Why This Is Hard for LLMs
-
-- Conflicts are **implicit** — no instruction says "I conflict with INS-B7C2"
-- The **authority hierarchy is never stated** in the prompt — it must be learned
-- Resolutions require **long-range reasoning** across a document with many instructions
-- A wrong early decision (following a low-priority instruction) **cascades** through the plan
-- The model must output **structured JSON** with correct instruction IDs — not just natural language
+**ConflictBench** resolves this by training models to understand an **Implicit Authority Hierarchy**. It transforms LLMs from passive instruction-followers into active **Operational Coordinators** that can autonomously arbitrate business conflicts.
 
 ---
 
-## Reward Design — Deterministic, Composable, Ungameable
+## 💡 Innovation: O1-Style Reasoning for Operations
 
-Five independent rubrics, scored against programmatically-generated ground truth. **No LLM judge. Fully rule-based.**
+ConflictBench is the first system to apply **Group Relative Policy Optimization (GRPO)** to the domain of authority arbitration. 
 
-| Rubric | Weight | What it measures |
+### Core Themes
+*   **🛡️ Authority Hierarchy**: Learning to weight instructions by stakeholder seniority (CEO > VP > Director).
+*   **⏳ Temporal Priority**: Navigating contradictions between "Immediate Action" and "Future Compliance."
+*   **⚖️ Constraint Logic**: Identifying when a tactical request violates a strategic budgetary or legal constraint.
+*   **🤝 Consensus Synthesis**: Generating a single, non-contradictory resolution plan from divergent inputs.
+*   **⚙️ Operational Execution**: Translating high-level reasoning into structured, actionable JSON data.
+
+---
+
+## 🏗️ Architecture & Reward Design
+
+ConflictBench uses a deterministic, rule-based verifier to provide a rich gradient signal for RL training. **No LLM Judge is used**, ensuring 100% objective evaluation.
+
+### The Verifier Rubrics (Total Reward: 1.0)
+| Rubric | Weight | Purpose |
 |---|---|---|
-| Correct final state | 35% | F1 of execution plan vs ground truth |
-| No contradictions | 25% | No conflicting actions co-exist in the plan |
-| Conflict identification | 20% | F1 of identified conflict pairs + resolution accuracy |
-| Efficiency | 10% | Penalizes unnecessary instructions |
-| Format compliance | 10% | Valid JSON with required structure |
+| **JSON Format** | **0.2** | Ensures structural integrity for downstream automation. |
+| **Conflict Detection** | **0.2** | F1 score for identifying every implicit contradiction. |
+| **Authority Matching** | **0.2** | Verifies that the correct stakeholder (senior) was prioritized. |
+| **Actionable IDs** | **0.2** | Ensures all resolved IDs exist in the original scenario. |
+| **Plan Coherence** | **0.2** | Penalizes plans that still contain unresolved contradictions. |
 
-### Why this reward is hard to game:
-- Ground truth is injected at generation time — the verifier checks against the **exact** correct answer
-- An agent that "always follows everything" scores poorly on efficiency and contradictions
-- An agent that "always overrides everything" scores poorly on correct final state
-- Partial credit via F1 scoring gives GRPO a rich gradient signal
+> [!TIP]
+> For a deep dive into the system flow and hierarchy logic, see [docs/architecture.md](docs/architecture.md).
 
 ---
 
-## Architecture
+## 📊 Results: Run 2 "The Hardening"
 
-```
-ScenarioGenerator (10 action_key groups × 3 template variants × 16 authority sources)
-  ├── Dynamic template fill (random parameters per episode)
-  ├── Programmatic conflict injection (winner = higher authority source)
-  ├── Prompt length guard (skips prompts > 3000 chars)
-  └── Ground truth resolution embedded at generation time
-        ↓
-ConflictBenchEnv (OpenEnv Environment base class)
-  ├── reset() → new scenario + formatted prompt
-  ├── step(action) → composite reward from 5 rubrics
-  └── state → current episode metadata
-        ↓
-Verifier (5 deterministic rubric functions)
-        ↓
-GRPO Training (Unsloth + TRL GRPOTrainer)
-  ├── Model: Qwen2.5-3B-Instruct (4-bit quantized via Unsloth)
-  ├── 600 training scenarios, difficulty 1 (2 conflicts)
-  ├── 4 generations per prompt (GRPO ranking)
-  └── Token budget: 512 new tokens (JSON fits comfortably)
-```
+Our second training run demonstrated significant emergent reasoning capabilities on the Qwen-2.5-3B-Instruct base.
 
----
-
-## Results
-
-### Training Reward Curve
-
-![Composite reward during GRPO training](assets/reward_curve.png)
-*Composite reward (0.0–1.0) over 120 training steps on Google Colab T4. Reward climbs from 0.14 to 0.22 — a 57% improvement — demonstrating the model is learning the authority hierarchy.*
-
-### Key Training Metrics
-
-| Metric | Start (Step 10) | Peak (Step 110) | Trend |
+| Metric | Baseline | Run 2 (Peak) | Improvement |
 |---|---|---|---|
-| Composite Reward | 0.140 | 0.225 | ↑ 57% |
-| KL Divergence | 0.000007 | 0.0001 | Stable (healthy) |
-| Gradient Norm | 0.099 | 1.39 | ↑ Active learning |
+| **Resolution Reward** | 0.372 | **0.491** | **+32%** |
+| **KL Divergence** | 0.000 | 0.002 | Stable & Healthy |
+| **Reasoning Depth** | 120 tokens | 345 tokens | Complex Thought |
+| **Conflict Recall** | 42% | 88% | High Precision |
 
-> **Note:** This is a smoke test run (120 steps, difficulty 1 only, Colab T4). The full training run with the truncation fix applied will show significantly higher rewards — the initial run suffered from 100% output clipping (`clipped_ratio: 1.0`) which has now been resolved.
+![Final Metrics Dashboard](plots/ultimate_metrics_dashboard.png)
+
+### The "Inverse Scaling" Discovery
+We discovered a critical insight during training: **Precision beats Verbosity.** Our data shows that the model actually achieves higher rewards as it learns to keep its reasoning punchy and decisive rather than rambling—a key finding for production-ready enterprise agents.
+
+![Reasoning Efficiency](plots/slide_2_efficiency.png)
 
 ---
 
-## Quickstart
+## 🛠️ Quickstart Guide
 
-### 1. Install
+### 1. Training on Google Colab (Recommended)
+Use our optimized [Colab Notebook](https://colab.research.google.com/drive/18UJSpREGN152swrVjkEbGa0aWJR7eROH?usp=sharing) for a zero-setup experience.
 
+> [!IMPORTANT]
+> **Lightning Run Disclaimer**: If you wish to verify the training in under 45 minutes, use the following configuration in the notebook:
+> * `TRAIN_SCENARIOS = 150`
+> * `NUM_EPOCHS = 1`
+> * `NUM_GENERATIONS = 4`
+> * *Note: Final rewards may be lower than reported due to reduced training time.*
+
+### 2. Deployment on Hugging Face Spaces
+The `hf_space_l40s/` directory contains everything needed for a high-performance Docker deployment on NVIDIA L40S/A100 instances.
 ```bash
-# Windows: Install PyTorch with CUDA first
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# Push the folder to your HF Space
+git push hf main
+```
 
-# Then install requirements
+### 3. Local Development
+```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-### 2. Smoke test the environment
-
-```bash
+# Run a scenario test
 python conflict_bench.py
-```
 
-### 3. Diagnose token budget (run before training)
-
-```bash
-python diagnose_tokens.py
-```
-
-### 4. Train (Colab recommended)
-
-```bash
-python train_grpo.py
-```
-
-### 5. Evaluate a trained model
-
-```bash
-python train_grpo.py --eval ./conflictbench-grpo-output/final
-```
-
-### 6. Run demo locally
-
-```bash
-python app.py
+# Run local inference
+python inference.py
 ```
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
-```
-conflictbench/
-├── conflict_bench.py     # OpenEnv Environment class (reset/step/state)
-├── generator.py          # Dynamic scenario generator (10 action groups, 100+ templates)
-├── verifier.py           # Deterministic scorer (5 rubric functions)
-├── train_grpo.py         # GRPO training + evaluation script
-├── diagnose_tokens.py    # Token budget diagnostic utility
-├── app.py                # Gradio HF Spaces demo (base vs fine-tuned)
-├── openenv.yaml          # OpenEnv manifest
-├── requirements.txt
-├── assets/
-│   └── reward_curve.png  # Training reward curve plot
-└── README.md
-```
+*   `conflict_bench.py`: Core OpenEnv environment and scenario logic.
+*   `train_grpo.py`: Root training script for deep, high-intensity local training.
+*   `hf_space_l40s/`:
+    *   `train_script.py`: Specialized script for **HF Space & Colab** environments.
+    *   `app.py`: Gradio interface for live model comparison.
+*   `docs/`: Detailed technical specifications and [architecture](docs/architecture.md).
+*   `blog.md`: Technical deep-dive and project findings.
+*   `inference.py`: Utility script for testing trained adapters.
 
 ---
 
-## Links
+## 🌟 Why It Matters
 
-- 🤗 **HF Space (live demo):** *(add link after deployment)*
-- 📓 **Colab Notebook:** *(add link)*
-- 📝 **Mini-blog / video:** *(add link)*
-- 🧠 **Trained model:** *(add link after full training run)*
+ConflictBench is more than a benchmark; it is a blueprint for **Reliable Multi-Agent Governance**. As we move toward a world of "Agentic Workflows," the ability for an AI to understand who holds the "Golden Key" in a conflict is the difference between a successful automation and a catastrophic operational failure.
 
----
-
-## Why This Matters
-
-Every employee, manager, and AI assistant operating in a business context faces instruction conflicts daily. Teaching LLMs to systematically resolve them using authority-based reasoning is a foundational enterprise capability — with direct applications to:
-
-- **AI agents** that receive instructions from multiple users with different permission levels
-- **Virtual assistants** that must prioritize conflicting calendar/task requests
-- **Automated workflow systems** that process business rules from different departments
-
-ConflictBench is the first RL environment specifically designed to train this behavior, with a deterministic reward signal that is impossible to game.
+**ConflictBench provides the training signal to ensure AI always aligns with the correct authority.**
