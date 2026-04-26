@@ -1,15 +1,93 @@
 spec_version: 1
+
 name: ConflictBench
 type: reinforcement_learning
-description: Authority-aware business reasoning using GRPO.
+description: >
+  An RL environment for training language models to resolve contradictory
+  business instructions using a six-tier authority hierarchy. Reward is fully
+  deterministic (5 rubric functions, no LLM judge). Trained via GRPO on
+  Qwen2.5-3B-Instruct with Unsloth + TRL.
+
 runtime: python-3.10
+
+# HF Spaces entry point (Gradio dashboard + training UI)
 entry_point: hf_space_l40s/app.py
-training_entry: hf_space_l40s/train_script.py
+
+# HF Spaces / Colab training script
+training_entry: hf_space_l40s/train.py
+
+# Root training script (local / Kaggle / research — full configurability)
+local_training_entry: train_grpo.py
+
 framework:
   - Unsloth
   - TRL
   - PyTorch
+  - PEFT
+  - HuggingFace Transformers
+
+environment:
+  class: ConflictBenchEnv
+  file: conflict_bench.py
+  observation: text          # formatted instruction document
+  action: text               # structured JSON resolution plan
+  reward_range: [0.0, 1.0]
+  reward_type: deterministic
+  episode_length: 1          # single-turn resolution
+
+reward_rubrics:
+  - name: correct_final_state
+    weight: 0.35
+    type: f1_score
+  - name: no_contradictions
+    weight: 0.25
+    type: binary_check
+  - name: conflict_identification
+    weight: 0.20
+    type: f1_score
+  - name: efficiency
+    weight: 0.10
+    type: penalty
+  - name: format_compliance
+    weight: 0.10
+    type: schema_validation
+
+training:
+  model: unsloth/Qwen2.5-3B-Instruct-bnb-4bit
+  method: GRPO
+  lora_rank: 32
+  lora_alpha: 32
+  train_scenarios: 400
+  eval_scenarios: 60
+  epochs: 2
+  learning_rate: 3.0e-6
+  beta_kl: 0.04
+  num_generations: 4
+  max_completion_tokens: 768
+  max_prompt_tokens: 3200
+  hardware:
+    - L40S-48GB  # ~8h
+    - L4-24GB    # ~14h
+    - A10G-24GB  # ~12h
+    - T4-16GB    # ~28h (2 Kaggle sessions)
+
+results:
+  baseline_reward: 0.14
+  best_reward: 0.50
+  final_reward: 0.48
+  improvement_pct: 257
+  best_checkpoint: checkpoint-250
+
+links:
+  hf_space: https://huggingface.co/spaces/Harsh-9209/Conflict_Bench
+  hf_model: https://huggingface.co/Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora
+  github: https://github.com/Harsh-4210/Conflict_Bench
+  blog: ./blog.md
+
 metadata:
-  version: 1.0.0
+  version: 2.0.0
   author: Harsh Jain
   competition: OpenEnv Hackathon India 2026
+  theme: Long-Horizon Instruction Following
+  sub_theme: AI Scaling (Scale AI Bonus)
+  license: MIT
