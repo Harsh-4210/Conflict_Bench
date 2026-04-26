@@ -147,20 +147,20 @@ Partial credit via F1 scoring gives GRPO a dense, informative gradient signal at
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    SCENARIO GENERATOR                        │
-│                                                              │
+│                    SCENARIO GENERATOR                       │
+│                                                             │
 │  10 action_key groups × 3 template variants per group       │
 │  16 authority sources across 6 hierarchy levels             │
 │  Dynamic parameter fill per episode (names, numbers, dates) │
-│  Programmatic conflict injection: winner = higher level      │
+│  Programmatic conflict injection: winner = higher level     │
 │  Prompt length guard: skips scenarios > 4000 chars          │
 │  Ground truth embedded at generation time                   │
 └───────────────────────────┬─────────────────────────────────┘
                             │  Scenario object
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│               ConflictBenchEnv (OpenEnv Base)                │
-│                                                              │
+│               ConflictBenchEnv (OpenEnv Base)               │
+│                                                             │
 │  reset()  → new scenario + formatted instruction document   │
 │  step(action) → calls Verifier → returns composite reward   │
 │  state    → current episode metadata + instruction list     │
@@ -168,21 +168,21 @@ Partial credit via F1 scoring gives GRPO a dense, informative gradient signal at
                             │  (completion, scenario)
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                       VERIFIER                               │
-│                                                              │
-│  R1: score_final_state()      → F1 vs ground truth  ×0.35  │
-│  R2: score_no_contradictions() → conflict check     ×0.25  │
-│  R3: score_conflict_id()      → pair F1 + direction ×0.20  │
-│  R4: score_efficiency()       → unnecessary items   ×0.10  │
-│  R5: score_format()           → JSON schema check   ×0.10  │
-│                                                              │
-│  Composite = Σ(weight × rubric_score)  ∈ [0.0, 1.0]        │
+│                       VERIFIER                              │
+│                                                             │
+│  R1: score_final_state()      → F1 vs ground truth  ×0.35   │
+│  R2: score_no_contradictions() → conflict check     ×0.25   │
+│  R3: score_conflict_id()      → pair F1 + direction ×0.20   │
+│  R4: score_efficiency()       → unnecessary items   ×0.10   │
+│  R5: score_format()           → JSON schema check   ×0.10   │
+│                                                             │
+│  Composite = Σ(weight × rubric_score)  ∈ [0.0, 1.0]         │
 └───────────────────────────┬─────────────────────────────────┘
                             │  List[float] rewards
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              GRPO TRAINING  (Unsloth + TRL)                  │
-│                                                              │
+│              GRPO TRAINING  (Unsloth + TRL)                 │
+│                                                             │
 │  Model:        Qwen2.5-3B-Instruct (bnb-4bit quantised)     │
 │  LoRA:         r=32, α=32, all attention + MLP projections  │
 │  Scenarios:    400 train / 60 eval                          │
@@ -190,8 +190,8 @@ Partial credit via F1 scoring gives GRPO a dense, informative gradient signal at
 │  Generations:  4–6 per prompt (GRPO group ranking)          │
 │  Max tokens:   768 completion / 3200 prompt                 │
 │  Epochs:       2–3                                          │
-│  LR:           3 × 10⁻⁶  |  Warmup: 5%  |  β (KL): 0.04   │
-│  Hardware:     A100 48GB (~8h) / L4 24GB (~14h)            │
+│  LR:           3 × 10⁻⁶  |  Warmup: 5%  |  β (KL): 0.04     │
+│  Hardware:     A100 48GB (~8h) / L4 24GB (~14h)             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
