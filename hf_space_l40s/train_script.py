@@ -49,27 +49,27 @@ def clone_repo():
 
 # ── Config (Run 2 Parameters) ────────────────────────────────────────────────
 
-TRAIN_SCENARIOS   = 600
-EVAL_SCENARIOS    = 30
-SEED              = 42
-
+TRAIN_SCENARIOS  = 300    # ↓ was 600
+EVAL_SCENARIOS   = 10     # ↓ was 30
+SEED             = 42
+ 
 DIFFICULTY_TRAIN_WEIGHTS = {1: 0.60, 2: 0.40}
 DIFFICULTY_EVAL_WEIGHTS  = {1: 0.40, 2: 0.40, 3: 0.20}
-
-NUM_EPOCHS        = 3
-BATCH_SIZE        = 1
-GRADIENT_ACCUM    = 8
-NUM_GENERATIONS   = 8
-MAX_NEW_TOKENS    = 768
-MAX_PROMPT_CHARS  = 2800
-LEARNING_RATE     = 3e-6
-WARMUP_STEPS      = 20
-BETA              = 0.04
-TEMPERATURE       = 0.85
-TOP_P             = 0.92
-
+ 
+NUM_EPOCHS       = 2      # ↓ was 3
+BATCH_SIZE       = 1
+GRADIENT_ACCUM   = 4      # ↓ was 8
+NUM_GENERATIONS  = 4      # ↓ was 8  ← BIGGEST SPEED WIN
+MAX_NEW_TOKENS   = 512    # ↓ was 768
+MAX_PROMPT_CHARS = 2800
+LEARNING_RATE    = 3e-6
+WARMUP_STEPS     = 20
+BETA             = 0.04
+TEMPERATURE      = 0.85
+TOP_P            = 0.92
+ 
 HF_REPO_ID = os.getenv("HF_REPO_ID", None)
-HF_TOKEN = os.getenv("HF_TOKEN", None)
+HF_TOKEN   = os.getenv("HF_TOKEN",   None)
 
 SYSTEM_PROMPT = """You are an expert business operations coordinator.
 Your task: given a set of business instructions from various stakeholders, identify ALL conflicts and produce a resolution plan.
