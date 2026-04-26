@@ -203,7 +203,7 @@ Partial credit via F1 scoring gives GRPO a dense, informative gradient signal at
 
 ### Training Curves (Run 2)
 
-![Training Results](./assets/training_results_run2.png)
+![Final Metrics Dashboard](./assets/ultimate_metrics_dashboard.png)
 
 *Four-panel dashboard: reward curve (top-left), GRPO policy loss (top-right), KL divergence from base policy (bottom-left), average reasoning length in tokens (bottom-right).*
 
@@ -221,6 +221,12 @@ Partial credit via F1 scoring gives GRPO a dense, informative gradient signal at
 A composite reward of 0.50 means the model simultaneously: produces a valid JSON execution plan, correctly identifies the majority of conflict pairs, resolves most of them in the right direction (higher authority wins), avoids contradictions in the output, and stays within format constraints. The baseline Qwen2.5-3B achieves 0.14 on the same task with the same prompt — a 257% relative improvement.
 
 The stable reasoning length (~300 tokens throughout training) confirms the model is not reward-hacking via length: it is not generating empty outputs to avoid contradictions, nor padding with irrelevant text to appear thorough.
+
+### Key Discoveries (Slide Deck)
+
+![Breakthrough](./assets/slide_1_breakthrough.png)
+![Efficiency](./assets/slide_2_efficiency.png)
+![Stability](./assets/slide_3_stability.png)
 
 > **Note on checkpoint selection:** The best checkpoint is step ~250 (reward 0.50), not the final step. If evaluating this model, use `checkpoint-250`.
 
