@@ -5,7 +5,7 @@ colorFrom: indigo
 colorTo: purple
 sdk: gradio
 python_version: "3.10"
-app_file: hf_space_a100/app.py
+app_file: app.py
 pinned: true
 license: mit
 ---
@@ -384,22 +384,28 @@ Conflict_Bench/
 ├── openenv.yaml               # OpenEnv manifest
 ├── requirements.txt           # Python dependencies
 │
-├── hf_space_a100/             # HF Spaces deployment package
+├── training_space/            # GRPO training dashboard (deployed as a SEPARATE HF Space)
 │   ├── app.py                 # Gradio training dashboard (live log streaming)
-│   ├── train.py               # Training script optimised for HF Spaces / Colab
+│   ├── train_script.py        # Training script optimised for HF Spaces / Colab
 │   └── README.md              # HF Spaces card
 │
-├── doc/                       # Project documentation
+├── docs/                      # Project documentation
 │   ├── ARCHITECTURE.md        # Full system architecture + design decisions
 │   ├── REWARD_DESIGN.md       # Reward function specification and rationale
-│   └── TRAINING_GUIDE.md      # Detailed training guide for all platforms
+│   ├── TRAINING_GUIDE.md      # Detailed training guide for all platforms
+│   └── TRAINING_LOGS.md       # Full training logs, bugs, and diagnostic findings
 │
 ├── assets/
-│   └── training_results_run2.png  # Run 2 training dashboard (4-panel chart)
+│   └── four_panel_training_metrics.png  # Run 2 training dashboard (4-panel chart)
 │
 ├── blog.md                    # Project write-up
 └── README.md                  # This file
 ```
+
+> **Note:** `training_space/` is the source code for a **separate** HF Space dedicated to one-click GRPO training.
+> It is deployed independently at [Harsh-9209/NEW_SPACE](https://huggingface.co/spaces/Harsh-9209/NEW_SPACE).
+> The main demo Space ([Harsh-9209/Conflict_Bench](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench)) runs `app.py` from the repo root.
+> **Do not push `training_space/` to the main demo Space.**
 
 ---
 
@@ -419,13 +425,82 @@ This work is a first step toward a class of models that organisations can actual
 
 ---
 
+## Before vs After Training — Actual Model Output
+
+The most convincing evidence is not a number — it is the model's actual behaviour. Below is the same scenario presented to Qwen2.5-3B-Instruct before and after GRPO training.
+
+**Scenario snippet (Difficulty 1, 2 conflicts):**
+```
+[INS-A3F9] From Legal & Compliance:
+  All hiring across Engineering is immediately frozen until further notice.
+
+[INS-B7C2] From VP Engineering:
+  Approved headcount plan: proceed with hiring 4 senior engineers for the Platform team.
+
+[INS-C1D4] From Director of IT:
+  Onboard the full Backend team to GitHub Enterprise by end of this week.
+
+[INS-D8E1] From Team Lead:
+  Hold off on GitHub Enterprise migration until the security review is done.
+```
+
+### ❌ Base Model (no training) — Composite: 0.14
+
+```json
+{
+  "identified_conflicts": [
+    {
+      "instruction_a": "INS-A3F9",
+      "instruction_b": "INS-B7C2",
+      "conflict_type": "direct",
+      "resolution": "INS-B7C2",
+      "reasoning": "VP Engineering has approved the hiring plan so we should proceed"
+    }
+  ],
+  "execution_plan": ["INS-A3F9", "INS-B7C2", "INS-C1D4", "INS-D8E1"],
+  "overridden_instructions": []
+}
+```
+
+**Failures:** Resolves hiring conflict in the WRONG direction (VP over Legal). Includes ALL instructions in execution plan — contradictory actions co-exist. Misses the second conflict entirely. No overrides listed.
+
+### ✅ Trained Model (GRPO, checkpoint-250) — Composite: 0.50
+
+```json
+{
+  "identified_conflicts": [
+    {
+      "instruction_a": "INS-A3F9",
+      "instruction_b": "INS-B7C2",
+      "conflict_type": "direct",
+      "resolution": "INS-A3F9",
+      "reasoning": "Legal & Compliance (tier 1) overrides VP Engineering (tier 3) on hiring"
+    },
+    {
+      "instruction_a": "INS-C1D4",
+      "instruction_b": "INS-D8E1",
+      "conflict_type": "direct",
+      "resolution": "INS-C1D4",
+      "reasoning": "Director of IT (tier 4) overrides Team Lead (tier 6) on system migration"
+    }
+  ],
+  "execution_plan": ["INS-A3F9", "INS-C1D4"],
+  "overridden_instructions": ["INS-B7C2", "INS-D8E1"]
+}
+```
+
+**Correct:** Both conflicts identified. Both resolved in the right direction (higher authority wins). Execution plan contains only winning instructions. Overridden list is accurate. No contradictions.
+
+---
+
 ## Links
 
 | Resource | URL |
 |---|---|
-| HF Space (live demo + training) | [https://huggingface.co/spaces/Harsh-9209/Conflict_Bench](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench) |
-| Trained LoRA adapter | [https://huggingface.co/Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora](https://huggingface.co/Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora) |
-| Colab Notebook | [https://colab.research.google.com/drive/18UJSpREGN152swrVjkEbGa0aWJR7eROH?usp=sharing] |
+| HF Space (Demo) | [Harsh-9209/Conflict_Bench](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench) — interactive base vs fine-tuned comparison |
+| HF Space (Training) | [Harsh-9209/NEW_SPACE](https://huggingface.co/spaces/Harsh-9209/NEW_SPACE) — one-click GRPO training dashboard |
+| Trained LoRA adapter | [Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora](https://huggingface.co/Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora) |
+| Colab Notebook | [Open in Colab](https://colab.research.google.com/drive/18UJSpREGN152swrVjkEbGa0aWJR7eROH?usp=sharing) |
 | Blog | [./blog.md](./blog.md) |
 
 ---

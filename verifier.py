@@ -298,10 +298,10 @@ def rubric_format_compliance(output: AgentOutput, scenario: Scenario) -> float:
 
 RUBRIC_WEIGHTS = {
     "correct_final_state":    0.35,
-    "no_contradictions":      0.15,
-    "conflict_identification": 0.30,
-    "efficiency":             0.08,
-    "format_compliance":      0.12,
+    "no_contradictions":      0.25,
+    "conflict_identification": 0.20,
+    "efficiency":             0.10,
+    "format_compliance":      0.10,
 }
 
 
