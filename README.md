@@ -12,8 +12,9 @@ license: mit
 
 # ConflictBench — Instruction Priority Resolution via GRPO
 
-> **OpenEnv Hackathon India 2026**
+> **Meta × PyTorch × HuggingFace | OpenEnv Hackathon × SCALER School of Technology**
 
+![Hackathon Banner](./assets/hackathon_banner.png)
 [![HF Space](https://img.shields.io/badge/HF%20Space-ConflictBench-blue)](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench)
 [![Colab Notebook](https://img.shields.io/badge/Colab-Training%20Notebook-orange)](https://colab.research.google.com/drive/18UJSpREGN152swrVjkEbGa0aWJR7eROH?usp=sharing)
 [![Blog](https://img.shields.io/badge/Blog-Read%20Write--up-green)](./blog.md)
@@ -505,4 +506,4 @@ The most convincing evidence is not a number — it is the model's actual behavi
 
 ---
 
-*ConflictBench — OpenEnv Hackathon India 2026 | Harsh Jain*
+*ConflictBench — Meta × PyTorch × HuggingFace | OpenEnv Hackathon × SCALER School of Technology | Harsh Jain*
