@@ -12,6 +12,8 @@ license: mit
 
 # ConflictBench — Instruction Priority Resolution via GRPO
 
+> **Status (Oct 2026):** an internal audit found that the reward can be partly gamed (an empty answer scores 0.34, and a keyword rule that ignores authority scores 0.95; see `python scripts/baselines.py`). It also found that the training numbers reported below can't be reproduced from this repo. Fixes are in progress (see [`FIX_BLUEPRINT.md`](./FIX_BLUEPRINT.md)). **Treat the results below as unverified.**
+
 > **Meta × PyTorch × HuggingFace | OpenEnv Hackathon × SCALER School of Technology**
 
 ![Hackathon Banner](./assets/hackathon_banner.png)

@@ -28,6 +28,10 @@ server = "conflictbench.server.app:main"
 [project.entry-points."openenv.environments"]
 conflictbench = "conflictbench.conflict_bench:ConflictBenchEnv"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
 [tool.setuptools]
 include-package-data = true
 packages = ["conflictbench", "conflictbench.server"]

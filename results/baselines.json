@@ -1,0 +1,96 @@
+{
+  "seed": 1234,
+  "per_difficulty": 200,
+  "strategies": {
+    "empty": {
+      "mean": 0.34,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 0.34,
+        "2": 0.34,
+        "3": 0.34
+      },
+      "n": 600
+    },
+    "follow_all": {
+      "mean": 0.4294,
+      "std": 0.0195,
+      "by_difficulty": {
+        "1": 0.452,
+        "2": 0.4239,
+        "3": 0.4122
+      },
+      "n": 600
+    },
+    "override_all": {
+      "mean": 0.34,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 0.34,
+        "2": 0.34,
+        "3": 0.34
+      },
+      "n": 600
+    },
+    "random_single": {
+      "mean": 0.4101,
+      "std": 0.0568,
+      "by_difficulty": {
+        "1": 0.4387,
+        "2": 0.4064,
+        "3": 0.3851
+      },
+      "n": 600
+    },
+    "random_half": {
+      "mean": 0.4113,
+      "std": 0.1517,
+      "by_difficulty": {
+        "1": 0.4908,
+        "2": 0.392,
+        "3": 0.3511
+      },
+      "n": 600
+    },
+    "hallucinated_ids": {
+      "mean": 0.34,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 0.34,
+        "2": 0.34,
+        "3": 0.34
+      },
+      "n": 600
+    },
+    "keyword_restrictive": {
+      "mean": 0.9512,
+      "std": 0.0628,
+      "by_difficulty": {
+        "1": 0.9604,
+        "2": 0.9464,
+        "3": 0.9467
+      },
+      "n": 600
+    },
+    "oracle_lookup": {
+      "mean": 1.0,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      },
+      "n": 600
+    },
+    "ground_truth": {
+      "mean": 1.0,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      },
+      "n": 600
+    }
+  }
+}
