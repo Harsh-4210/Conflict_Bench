@@ -127,8 +127,14 @@ def _edits(sc, answer, rng):
     def hallucinate():
         (answer.plan if rng.random() < 0.5 else answer.overridden).append(next(fake_ids))
 
+    real_pairs = {frozenset((c.instruction_a_id, c.instruction_b_id)) for c in sc.conflicts}
+
     def spurious_pair():
-        a, b = rng.sample([i.id for i in sc.instructions], 2)
+        # Must be a genuinely wrong pair: a real pair could restore a dropped correct entry.
+        while True:
+            a, b = rng.sample([i.id for i in sc.instructions], 2)
+            if frozenset((a, b)) not in real_pairs:
+                break
         answer.extra_conflicts.append({"instruction_a": a, "instruction_b": b, "conflict_type": "direct",
                                        "resolution": a, "reasoning": "r"})
 
