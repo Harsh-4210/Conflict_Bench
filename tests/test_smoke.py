@@ -27,10 +27,7 @@ def test_ground_truth_scores_perfect(difficulty):
     "garbage",
     "not json at all",
     "{",
-    pytest.param("[]", marks=pytest.mark.xfail(
-        strict=True, raises=AttributeError,
-        reason="P1-1: a top-level JSON list crashes parse_agent_output (data.keys())",
-    )),
+    "[]",
 ])
 def test_unparseable_output_scores_zero(raw):
     sc = ScenarioGenerator(seed=0).generate(difficulty=1)
