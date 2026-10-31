@@ -20,7 +20,7 @@ val_size: 30
 train_difficulty_mix: {1: 0.4, 2: 0.4, 3: 0.2}
 val_difficulty_mix: {1: 0.4, 2: 0.4, 3: 0.2}
 max_prompt_tokens: 2560
-max_completion_tokens: 768     # 2560 + 768 = 3328 <= max_seq_length
+max_completion_tokens: 1024    # 2560 + 1024 = 3584 <= max_seq_length (level-3 plans list ~25 IDs)
 
 learning_rate: 5.0e-6
 warmup_steps: 20

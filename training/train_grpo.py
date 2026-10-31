@@ -41,7 +41,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import training  # noqa: F401  (puts the repo root on sys.path)
 import verifier
-from generator import ScenarioGenerator
+from generator import GeneratorConfig, ScenarioGenerator
 from prompts import build_messages
 from scenario_io import dumps_scenario, loads_scenario
 from training.config import ConfigError, TrainConfig, allocate_counts, load_config
@@ -69,15 +69,13 @@ class DatasetError(RuntimeError):
 def make_generator(cfg: TrainConfig, split: str):
     """The ONE place that builds a scenario generator for training.
 
-    TODO(P3-6): once ``GeneratorConfig`` (with ``split="train"|"val"|"test"`` template/topic pools) lands in
-    generator.py, build ``ScenarioGenerator(seed=..., config=GeneratorConfig(split=split))`` here. Until then the
-    two splits only differ by seed, and ``build_datasets`` removes val prompts that are identical to a train
-    prompt, so the val reward is NOT yet a held-out-template measurement.
+    Each split draws from its own disjoint pools of phrasings, companies and job titles
+    (``GeneratorConfig(split=...)``), so the val reward measures held-out templates.
     """
     if split not in TRAINING_SPLITS:
         raise ValueError(f"training may only use splits {TRAINING_SPLITS}, got {split!r} "
                          "(the test split is evaluated once at the end by scripts/evaluate.py)")
-    return ScenarioGenerator(seed=cfg.seed + _SPLIT_SEED_OFFSET[split])
+    return ScenarioGenerator(seed=cfg.seed + _SPLIT_SEED_OFFSET[split], config=GeneratorConfig(split=split))
 
 
 def prompt_token_count(tokenizer: Any, messages: Sequence[Mapping[str, str]]) -> int:

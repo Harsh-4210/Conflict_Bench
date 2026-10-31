@@ -7,7 +7,7 @@ results_dir: results
 seed: 42
 
 model: unsloth/Qwen2.5-0.5B-Instruct
-max_seq_length: 2048
+max_seq_length: 2304
 load_in_4bit: false
 lora_r: 8
 lora_alpha: 8
@@ -18,7 +18,7 @@ train_size: 20
 val_size: 4
 train_difficulty_mix: {1: 1.0}
 val_difficulty_mix: {1: 1.0}
-max_prompt_tokens: 1536
+max_prompt_tokens: 1792
 max_completion_tokens: 384
 
 learning_rate: 5.0e-6

@@ -21,6 +21,7 @@ from openenv.core.env_server.types import State
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from conflict_bench import ConflictBenchEnv
+from generator import MAX_DIFFICULTY
 
 try:
     from .models import ConflictBenchAction, ConflictBenchObservation
@@ -78,12 +79,12 @@ class ConflictBenchEnvironment(
         Args:
             seed: Reproducible scenario (a fresh ScenarioGenerator(seed) is used).
             episode_id: Optional custom episode id; defaults to the scenario id.
-            **kwargs: Optional ``difficulty`` (1-3) and ``domain`` overrides.
+            **kwargs: Optional ``difficulty`` (1-MAX_DIFFICULTY) and ``domain`` overrides.
         """
         difficulty = kwargs.get("difficulty")
         domain = kwargs.get("domain")
-        if difficulty is not None and difficulty not in (1, 2, 3):
-            return self._error(f"Invalid difficulty {difficulty!r}; expected 1, 2 or 3.")
+        if difficulty is not None and difficulty not in range(1, MAX_DIFFICULTY + 1):
+            return self._error(f"Invalid difficulty {difficulty!r}; expected 1-{MAX_DIFFICULTY}.")
         if domain is not None and domain not in _DOMAINS:
             return self._error(f"Invalid domain {domain!r}; expected one of {list(_DOMAINS)}.")
         if difficulty is not None:

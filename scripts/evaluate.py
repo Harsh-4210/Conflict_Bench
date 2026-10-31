@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from generator import Scenario, ScenarioGenerator
+from generator import GeneratorConfig, Scenario, ScenarioGenerator
 from scenario_io import load_scenarios, save_scenarios
 from verifier import score
 
@@ -94,20 +94,22 @@ def _mean(xs: Sequence[float]) -> float:
 # Data
 # ---------------------------------------------------------------------------
 
-def generate_dataset(n: int, seed: int, out_dir: Path) -> Path:
+def generate_dataset(n: int, seed: int, out_dir: Path, split: str = "test") -> Path:
     """Build n scenarios spread evenly over difficulties 1-3 and save them under <out_dir>/data/.
+
+    Scenarios come from the given generator split (default "test", the held-out pools).
 
     The filename carries the first 8 hex chars of the content hash, so a changed
     generator never silently overwrites an older set that results still point to.
     """
-    gen = ScenarioGenerator(seed=seed)
+    gen = ScenarioGenerator(seed=seed, config=GeneratorConfig(split=split))
     scenarios: List[Scenario] = []
     for d, count in zip((1, 2, 3), (n // 3 + (1 if i < n % 3 else 0) for i in range(3))):
         scenarios.extend(gen.generate(difficulty=d) for _ in range(count))
     data_dir = Path(out_dir) / "data"
     tmp = data_dir / f"_tmp_n{n}_seed{seed}.jsonl"
     save_scenarios(tmp, scenarios)
-    final = data_dir / f"gen_n{n}_seed{seed}_{sha256_file(tmp)[:8]}.jsonl"
+    final = data_dir / f"gen_{split}_n{n}_seed{seed}_{sha256_file(tmp)[:8]}.jsonl"
     if final.exists():
         tmp.unlink()
     else:
@@ -207,6 +209,8 @@ def build_parser() -> argparse.ArgumentParser:
     src.add_argument("--data", help="scenario JSONL file")
     src.add_argument("--generate", type=int, metavar="N", help="build N scenarios on the fly (even over difficulties)")
     src.add_argument("--seed", type=int, default=1234, help="seed for --generate (default 1234)")
+    src.add_argument("--split", default="test", choices=["train", "val", "test"],
+                     help="generator split for --generate (default test)")
     p.add_argument("--limit", type=int, help="score only the first N scenarios")
     p.add_argument("--run-name", help="results sub-directory (default: derived from backend and data)")
     p.add_argument("--out-dir", default=str(ROOT / "results"))
@@ -261,7 +265,7 @@ def main(argv: Optional[Sequence[str]] = None) -> dict:
     out_dir = Path(args.out_dir)
     if bool(args.data) == bool(args.generate):
         raise SystemExit("give exactly one of --data or --generate")
-    data_path = Path(args.data) if args.data else generate_dataset(args.generate, args.seed, out_dir)
+    data_path = Path(args.data) if args.data else generate_dataset(args.generate, args.seed, out_dir, args.split)
     scenarios = load_scenarios(data_path)
     if args.limit:
         scenarios = scenarios[: args.limit]
