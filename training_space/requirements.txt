@@ -1,6 +1,7 @@
-gradio>=4.0.0
-transformers
-trl
-datasets
-huggingface_hub
-matplotlib
+# UI-only dependencies of the training Space. The ML stack (unsloth, trl, transformers, ...) is installed from the
+# repo's pinned requirements-train.txt by the Dockerfile; do NOT list it here (an unpinned line would override the pins).
+#
+# gradio 6.13.0 is the version tests/test_training_space_lock.py runs against. It accepts huggingface-hub <2.0 and
+# >=0.33.5, which is what lets it share an environment with transformers 4.57.6 (needs huggingface-hub <1.0).
+# Newer gradio 6.x releases require huggingface-hub >=1.2, which would conflict with that transformers pin.
+gradio==6.13.0
