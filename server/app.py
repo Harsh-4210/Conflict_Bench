@@ -1,25 +1,15 @@
 """
 FastAPI application for the ConflictBench Environment.
 
-This module creates an HTTP server that exposes the ConflictBenchEnvironment
-over HTTP and WebSocket endpoints, compatible with EnvClient.
-
-Endpoints:
-    - POST /reset: Reset the environment
-    - POST /step: Execute an action
-    - GET /state: Get current environment state
-    - GET /schema: Get action/observation schemas
-    - WS /ws: WebSocket endpoint for persistent sessions
+Endpoints (openenv-core 0.2.3):
+    - POST /reset: Reset (stateless: each HTTP call gets a fresh environment)
+    - POST /step: Execute an action (stateless, see above)
+    - GET /state, GET /schema, GET /metadata, GET /health
+    - WS /ws: persistent session; use this for real reset-then-step episodes
 
 Usage:
-    # Development (with auto-reload):
-    uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
-
-    # Production:
-    uvicorn server.app:app --host 0.0.0.0 --port 8000 --workers 4
-
-    # Or run directly:
-    python -m server.app
+    uvicorn server.app:app --host 0.0.0.0 --port 8000
+    python -m server.app --port 8000
 """
 
 try:
@@ -31,35 +21,25 @@ except Exception as e:  # pragma: no cover
 
 try:
     from .conflictbench_environment import ConflictBenchEnvironment
+    from .models import ConflictBenchAction, ConflictBenchObservation
 except ImportError:
     from server.conflictbench_environment import ConflictBenchEnvironment
+    from server.models import ConflictBenchAction, ConflictBenchObservation
 
-from openenv.core.env_server.types import TextAction, TextObservation
 
-
-# Create the app with web interface and README integration
+# The environment class is the factory: one fresh, isolated instance per session.
+# reveal_ground_truth defaults to False, so served observations never leak answers.
 app = create_app(
     ConflictBenchEnvironment,
-    TextAction,
-    TextObservation,
+    ConflictBenchAction,
+    ConflictBenchObservation,
     env_name="conflictbench",
     max_concurrent_envs=10,
 )
 
 
 def main():
-    """
-    Entry point for direct execution via uv run or python -m.
-
-    This function enables running the server without Docker:
-        uv run --project . server
-        uv run --project . server --port 8001
-        python -m conflictbench.server.app
-
-    For production deployments, consider using uvicorn directly with
-    multiple workers:
-        uvicorn conflictbench.server.app:app --workers 4
-    """
+    """Entry point for direct execution: python -m server.app [--host H] [--port P]."""
     import argparse
     import uvicorn
 

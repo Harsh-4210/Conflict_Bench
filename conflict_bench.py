@@ -8,16 +8,17 @@ An LLM agent is given a realistic business instruction document containing
 conflict. The agent must identify every conflict, resolve it according to
 an implicit authority hierarchy, and produce a clean execution plan.
 
-Follows OpenEnv gym-style API: reset() / step() / state property.
-Uses OpenEnv's Rubric system for composable multi-dimensional rewards.
+Gym-style API: reset() / step() / state property.
+Rewards come from verifier.score(): a deterministic weighted sum of five
+rubric functions (no LLM judge).
 """
 
 import sys
 import os
-import random
+import json
 from typing import Optional, Dict, Any, Tuple
 
-# OpenEnv base import — works with latest OpenEnv release
+# OpenEnv base class — works with the installed openenv-core release
 try:
     from openenv.core.env_server import Environment
     OPENENV_AVAILABLE = True
@@ -31,29 +32,9 @@ except ImportError:
         class Environment:
             pass
 
-# Local stubs for Rubric/RubricSet used in smoke testing
-class Rubric:
-    def __init__(self, name, fn, weight):
-        self.name = name
-        self.fn = fn
-        self.weight = weight
-
-class RubricSet:
-    def __init__(self, rubrics):
-        self.rubrics = rubrics
-
 sys.path.insert(0, os.path.dirname(__file__))
 from generator import ScenarioGenerator, Scenario
-from verifier import (
-    score,
-    parse_agent_output,
-    rubric_correct_final_state,
-    rubric_no_contradictions,
-    rubric_conflict_identification,
-    rubric_efficiency,
-    rubric_format_compliance,
-    ScoreBreakdown,
-)
+from verifier import score, ScoreBreakdown
 
 
 class ConflictBenchEnv(Environment):
@@ -64,7 +45,8 @@ class ConflictBenchEnv(Environment):
       - reset() generates a fresh business instruction scenario
       - The agent observes a formatted instruction document as text
       - step(action) receives the agent's JSON plan, scores it, returns reward
-      - Episode is single-step (one plan per scenario)
+      - Episode is single-step (one plan per scenario); calling step() again
+        before the next reset() raises RuntimeError
 
     Difficulty auto-scales with episode count during training.
     """
@@ -96,6 +78,7 @@ class ConflictBenchEnv(Environment):
             fixed_domain: Fix domain to "HR", "Finance", "IT", or "Operations".
             seed: Random seed for reproducibility.
         """
+        super().__init__()
         self.auto_scale_difficulty = auto_scale_difficulty
         self.fixed_difficulty = fixed_difficulty
         self.fixed_domain = fixed_domain
@@ -105,54 +88,6 @@ class ConflictBenchEnv(Environment):
         self._current_scenario: Optional[Scenario] = None
         self._current_score: Optional[ScoreBreakdown] = None
         self._done = False
-
-        # Register OpenEnv rubrics if available
-        if OPENENV_AVAILABLE:
-            self._rubric_set = self._build_rubric_set()
-
-    # ------------------------------------------------------------------
-    # OpenEnv Rubric construction
-    # ------------------------------------------------------------------
-
-    def _build_rubric_set(self) -> RubricSet:
-        """Construct OpenEnv RubricSet with all 5 composable rubrics."""
-
-        def _make_rubric_fn(rubric_func):
-            """Wrap a rubric function so it receives (output_str, scenario)."""
-            def fn(agent_output: str, **kwargs) -> float:
-                if self._current_scenario is None:
-                    return 0.0
-                return rubric_func(parse_agent_output(agent_output), self._current_scenario)
-            return fn
-
-        rubrics = [
-            Rubric(
-                name="correct_final_state",
-                fn=_make_rubric_fn(rubric_correct_final_state),
-                weight=0.35,
-            ),
-            Rubric(
-                name="no_contradictions",
-                fn=_make_rubric_fn(rubric_no_contradictions),
-                weight=0.25,
-            ),
-            Rubric(
-                name="conflict_identification",
-                fn=_make_rubric_fn(rubric_conflict_identification),
-                weight=0.20,
-            ),
-            Rubric(
-                name="efficiency",
-                fn=_make_rubric_fn(rubric_efficiency),
-                weight=0.10,
-            ),
-            Rubric(
-                name="format_compliance",
-                fn=_make_rubric_fn(rubric_format_compliance),
-                weight=0.10,
-            ),
-        ]
-        return RubricSet(rubrics)
 
     # ------------------------------------------------------------------
     # Difficulty scaling
@@ -179,9 +114,15 @@ class ConflictBenchEnv(Environment):
     # Gym-style API
     # ------------------------------------------------------------------
 
-    def reset(self) -> Dict[str, Any]:
+    def reset(self, seed: Optional[int] = None) -> Dict[str, Any]:
         """
         Start a new episode. Generates a fresh scenario.
+
+        Args:
+            seed: If given, this episode is generated by a fresh
+                ScenarioGenerator(seed=seed), so the same seed always
+                produces the same scenario. If None, the environment's
+                own generator continues its stream.
 
         Returns:
             observation dict with:
@@ -191,6 +132,8 @@ class ConflictBenchEnv(Environment):
               - "num_conflicts": number of conflicts in this scenario (int)
               - "scenario_id": unique episode ID (str)
         """
+        if seed is not None:
+            self.generator = ScenarioGenerator(seed=seed)
         difficulty = self._get_difficulty()
         self._current_scenario = self.generator.generate(
             difficulty=difficulty,
@@ -220,9 +163,15 @@ class ConflictBenchEnv(Environment):
               - reward: composite float in [0.0, 1.0]
               - done: always True after one step
               - info: dict with score breakdown + ground truth
+
+        Raises:
+            RuntimeError: if reset() has not been called, or the episode is
+                already finished.
         """
         if self._current_scenario is None:
             raise RuntimeError("Must call reset() before step()")
+        if self._done:
+            raise RuntimeError("Episode finished; call reset()")
 
         self._current_score = score(action, self._current_scenario)
         self._episode_count += 1
@@ -287,13 +236,13 @@ class ConflictBenchEnv(Environment):
 
     def sample_action(self) -> str:
         """
-        Return the ground truth answer as a sample action.
+        Return the ground truth answer as a sample action (a JSON string).
         Useful for sanity checks and baseline evaluation.
         """
         if self._current_scenario is None:
             raise RuntimeError("Must call reset() first.")
         sc = self._current_scenario
-        return {
+        return json.dumps({
             "identified_conflicts": [
                 {
                     "instruction_a": c.instruction_a_id,
@@ -306,7 +255,7 @@ class ConflictBenchEnv(Environment):
             ],
             "execution_plan": sc.ground_truth_followed,
             "overridden_instructions": sc.ground_truth_overridden,
-        }
+        })
 
     def render(self) -> str:
         """Return a human-readable render of the current scenario state."""
@@ -338,8 +287,6 @@ class ConflictBenchEnv(Environment):
 # ------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import json
-
     print("=== ConflictBench Smoke Test ===\n")
     env = ConflictBenchEnv(auto_scale_difficulty=False, fixed_difficulty=2, seed=42)
 
@@ -349,8 +296,8 @@ if __name__ == "__main__":
     print(obs["prompt"][:800])
     print("...\n")
 
-    # Test with ground truth answer
-    gt_action = json.dumps(env.sample_action())
+    # Test with ground truth answer (sample_action() already returns a JSON string)
+    gt_action = env.sample_action()
     _, reward, done, info = env.step(gt_action)
     print(f"Ground truth score: {reward:.4f}")
     print(f"Breakdown: {info['score_breakdown']}")

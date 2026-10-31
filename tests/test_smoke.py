@@ -17,7 +17,7 @@ def test_ground_truth_scores_perfect(difficulty):
     env = ConflictBenchEnv(auto_scale_difficulty=False, fixed_difficulty=difficulty, seed=difficulty)
     for _ in range(50):
         env.reset()
-        _, reward, done, _ = env.step(json.dumps(env.sample_action()))
+        _, reward, done, _ = env.step(env.sample_action())
         assert done is True
         assert reward == 1.0
 
