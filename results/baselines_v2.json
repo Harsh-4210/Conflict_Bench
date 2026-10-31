@@ -1,0 +1,106 @@
+{
+  "seed": 1234,
+  "per_difficulty": 200,
+  "strategies": {
+    "empty": {
+      "mean": 0.0,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 0.0,
+        "2": 0.0,
+        "3": 0.0
+      },
+      "n": 600
+    },
+    "follow_all": {
+      "mean": 0.1765,
+      "std": 0.009,
+      "by_difficulty": {
+        "1": 0.187,
+        "2": 0.1741,
+        "3": 0.1686
+      },
+      "n": 600
+    },
+    "override_all": {
+      "mean": 0.1168,
+      "std": 0.0139,
+      "by_difficulty": {
+        "1": 0.1005,
+        "2": 0.1211,
+        "3": 0.1286
+      },
+      "n": 600
+    },
+    "random_single": {
+      "mean": 0.0386,
+      "std": 0.0312,
+      "by_difficulty": {
+        "1": 0.0541,
+        "2": 0.0367,
+        "3": 0.025
+      },
+      "n": 600
+    },
+    "random_half": {
+      "mean": 0.2199,
+      "std": 0.0728,
+      "by_difficulty": {
+        "1": 0.2178,
+        "2": 0.218,
+        "3": 0.2238
+      },
+      "n": 600
+    },
+    "hallucinated_ids": {
+      "mean": 0.0,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 0.0,
+        "2": 0.0,
+        "3": 0.0
+      },
+      "n": 600
+    },
+    "keyword_restrictive": {
+      "mean": 0.9135,
+      "std": 0.1156,
+      "by_difficulty": {
+        "1": 0.9165,
+        "2": 0.9075,
+        "3": 0.9165
+      },
+      "n": 600
+    },
+    "oracle_lookup": {
+      "mean": 1.0,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      },
+      "n": 600
+    },
+    "ground_truth": {
+      "mean": 1.0,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      },
+      "n": 600
+    },
+    "gt_one_conflict_flipped": {
+      "mean": 0.8049,
+      "std": 0.083,
+      "by_difficulty": {
+        "1": 0.6915,
+        "2": 0.8357,
+        "3": 0.8874
+      },
+      "n": 600
+    }
+  }
+}

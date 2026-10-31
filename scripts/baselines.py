@@ -143,6 +143,28 @@ def ground_truth(sc, rng):
     )
 
 
+def gt_one_conflict_flipped(sc, rng):
+    """Ground truth, except one random conflict is resolved the wrong way round."""
+    flipped = rng.choice(sc.conflicts)
+    winner = flipped.resolution_id
+    loser = flipped.instruction_b_id if winner == flipped.instruction_a_id else flipped.instruction_a_id
+    swap = {winner: loser, loser: winner}
+    return _answer(
+        [
+            {
+                "instruction_a": c.instruction_a_id,
+                "instruction_b": c.instruction_b_id,
+                "conflict_type": c.conflict_type,
+                "resolution": swap.get(c.resolution_id, c.resolution_id) if c is flipped else c.resolution_id,
+                "reasoning": c.explanation,
+            }
+            for c in sc.conflicts
+        ],
+        [swap.get(i, i) for i in sc.ground_truth_followed],
+        [swap.get(i, i) for i in sc.ground_truth_overridden],
+    )
+
+
 STRATEGIES: Dict[str, Callable] = {
     "empty": empty,
     "follow_all": follow_all,
@@ -153,6 +175,7 @@ STRATEGIES: Dict[str, Callable] = {
     "keyword_restrictive": keyword_restrictive,
     "oracle_lookup": oracle_lookup,
     "ground_truth": ground_truth,
+    "gt_one_conflict_flipped": gt_one_conflict_flipped,
 }
 
 

@@ -1,13 +1,21 @@
 """
 ConflictBench — Deterministic Verifier
 Scores LLM output against ground truth. No LLM judge. Fully rule-based.
-5 independent rubric functions, each returning a float in [0.0, 1.0].
+
+Scoring (Phase 2, see FIX_BLUEPRINT.md P2-1..P2-6):
+  composite = 0.45 x correct_final_state
+            + 0.30 x conflict_identification
+            + 0.25 x no_contradictions
+  then the format gate: no parseable answer -> 0; schema errors -> x 0.9.
+
+`efficiency` and `format_compliance` are still computed and reported, but only
+for logging. They are not part of the composite.
 """
 
 import json
 import re
-from dataclasses import dataclass
-from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from generator import Scenario
 
@@ -16,235 +24,341 @@ from generator import Scenario
 # Output parser
 # ---------------------------------------------------------------------------
 
+REQUIRED_KEYS = ("identified_conflicts", "execution_plan", "overridden_instructions")
+
+# ID-like fields inside one identified_conflicts entry.
+_CONFLICT_ID_FIELDS = ("instruction_a", "instruction_b", "resolution")
+
+_FENCE_RE = re.compile(r"```[ \t]*(?:json|JSON)?[ \t]*\r?\n?([\s\S]*?)```")
+_DECODER = json.JSONDecoder()
+
+
 @dataclass
 class AgentOutput:
     raw: str
     parsed_ok: bool
     identified_conflicts: List[Dict]   # list of {instruction_a, instruction_b, conflict_type, resolution, reasoning}
-    execution_plan: List[str]          # list of instruction IDs
-    overridden_instructions: List[str] # list of instruction IDs
+    execution_plan: List[str]          # list of instruction IDs (normalised: stripped, upper case)
+    overridden_instructions: List[str] # list of instruction IDs (normalised: stripped, upper case)
     parse_error: Optional[str] = None
+    schema_errors: List[str] = field(default_factory=list)  # type problems found while normalising
 
 
-def parse_agent_output(raw: str) -> AgentOutput:
-    """
-    Extract and parse the JSON block from LLM output.
-    Handles common LLM formatting issues (markdown fences, trailing text).
-    """
-    # Handle case where TRL passes the completion as a list of message dicts
+def _norm_id(value: Any) -> str:
+    """Canonical form of an instruction ID: stripped, upper case."""
+    return str(value).strip().upper()
+
+
+def _is_id_scalar(value: Any) -> bool:
+    # bool is a subclass of int, but True/False are never valid IDs.
+    return isinstance(value, (str, int)) and not isinstance(value, bool)
+
+
+def _coerce_text(raw: Any) -> str:
+    """Turn whatever the caller passed (str, TRL message list, other) into text."""
+    if isinstance(raw, str):
+        return raw
     if isinstance(raw, list):
-        raw = raw[-1].get("content", "") if raw else ""
-    elif not isinstance(raw, str):
-        raw = str(raw)
+        if not raw:
+            return ""
+        last = raw[-1]
+        if isinstance(last, dict):
+            content = last.get("content", "")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):  # OpenAI-style content parts
+                return "".join(
+                    str(part.get("text", "")) if isinstance(part, dict) else str(part)
+                    for part in content
+                )
+            return str(content)
+        return last if isinstance(last, str) else str(last)
+    return str(raw)
 
-    # Strip markdown code fences if present
-    cleaned = raw.strip()
-    fence_match = re.search(r"```(?:json)?\s*([\s\S]+?)```", cleaned)
-    if fence_match:
-        cleaned = fence_match.group(1).strip()
 
-    # Try to extract first JSON object if there's trailing text
-    brace_match = re.search(r"\{[\s\S]*\}", cleaned)
-    if brace_match:
-        cleaned = brace_match.group(0)
+def _scan_objects(text: str) -> List[dict]:
+    """
+    Every JSON object that can be decoded starting at some '{' in `text`, in order.
+    An object holding all required keys is taken whole (its insides are skipped);
+    any other object is kept but scanning continues inside it, so an answer nested
+    in a wrapper object is still found.
+    """
+    found: List[dict] = []
+    pos = text.find("{")
+    while pos != -1:
+        try:
+            obj, end = _DECODER.raw_decode(text, pos)
+        except (ValueError, RecursionError):
+            pos = text.find("{", pos + 1)
+            continue
+        if isinstance(obj, dict):
+            found.append(obj)
+            span = text[pos:end]
+            # Skip the object's insides if it is the answer, or if no answer can be
+            # nested inside it (keeps the scan linear on large non-answer objects).
+            if all(k in obj for k in REQUIRED_KEYS) or not all(f'"{k}"' in span for k in REQUIRED_KEYS):
+                pos = text.find("{", end)
+                continue
+        pos = text.find("{", pos + 1)
+    return found
 
+
+def _find_answer(text: str) -> Tuple[Optional[dict], Optional[str]]:
+    """
+    Pick the answer object. Order: fenced blocks, last block first; then the whole
+    text. Within a region the LAST object with all required keys wins (models often
+    correct themselves at the end). Returns (object, None) or (None, error).
+    """
+    regions = [m.group(1) for m in _FENCE_RE.finditer(text)][::-1]
+    regions.append(text)
+
+    any_object = False
+    for region in regions:
+        objects = _scan_objects(region)
+        any_object = any_object or bool(objects)
+        for obj in reversed(objects):
+            if all(k in obj for k in REQUIRED_KEYS):
+                return obj, None
+
+    if any_object:
+        return None, f"No JSON object has all required keys: {list(REQUIRED_KEYS)}"
+    return None, "No JSON object found"
+
+
+def _as_id_list(value: Any, field_name: str, errors: List[str]) -> List[str]:
+    """None -> []; str -> [str]; list -> its str/int items; anything else -> [] + error."""
+    if value is None:
+        return []
+    if _is_id_scalar(value):
+        ident = _norm_id(value)
+        return [ident] if ident else []
+    if isinstance(value, list):
+        out: List[str] = []
+        for i, item in enumerate(value):
+            if _is_id_scalar(item):
+                ident = _norm_id(item)
+                if ident:
+                    out.append(ident)
+                else:
+                    errors.append(f"{field_name}[{i}]: empty ID")
+            else:
+                errors.append(f"{field_name}[{i}]: expected an ID string, got {type(item).__name__}")
+        return out
+    errors.append(f"{field_name}: expected a list, got {type(value).__name__}")
+    return []
+
+
+def _as_conflict_list(value: Any, errors: List[str]) -> List[Dict]:
+    """Keep only dict entries whose ID fields are scalars; normalise those IDs."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        errors.append(f"identified_conflicts: expected a list, got {type(value).__name__}")
+        return []
+
+    out: List[Dict] = []
+    for i, entry in enumerate(value):
+        where = f"identified_conflicts[{i}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{where}: expected an object, got {type(entry).__name__}")
+            continue
+        clean = dict(entry)
+        bad = False
+        for key in _CONFLICT_ID_FIELDS:
+            if key not in entry:
+                errors.append(f"{where}: missing '{key}'")
+            elif _is_id_scalar(entry[key]):
+                clean[key] = _norm_id(entry[key])
+            else:
+                errors.append(f"{where}.{key}: expected an ID string, got {type(entry[key]).__name__}")
+                bad = True
+        if bad:
+            continue
+        for key in ("conflict_type", "reasoning"):
+            if key in clean and not isinstance(clean[key], str):
+                clean[key] = str(clean[key])
+        out.append(clean)
+    return out
+
+
+def parse_agent_output(raw: Any) -> AgentOutput:
+    """
+    Extract and parse the JSON answer from LLM output. Never raises.
+    Accepts a str, a TRL list of message dicts, or anything else (via str()).
+    """
     try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError as e:
+        text = _coerce_text(raw)
+    except Exception as e:  # a hostile __str__ must not crash the scorer
+        return AgentOutput("", False, [], [], [], parse_error=f"Unreadable input: {e!r}")
+
+    data, error = _find_answer(text)
+    if data is None:
         return AgentOutput(
-            raw=raw,
+            raw=text,
             parsed_ok=False,
             identified_conflicts=[],
             execution_plan=[],
             overridden_instructions=[],
-            parse_error=str(e),
+            parse_error=error,
         )
 
-    # Validate required top-level keys
-    required_keys = {"identified_conflicts", "execution_plan", "overridden_instructions"}
-    missing = required_keys - set(data.keys())
-    if missing:
-        return AgentOutput(
-            raw=raw,
-            parsed_ok=False,
-            identified_conflicts=[],
-            execution_plan=[],
-            overridden_instructions=[],
-            parse_error=f"Missing required keys: {missing}",
-        )
-
+    errors: List[str] = []
     return AgentOutput(
-        raw=raw,
+        raw=text,
         parsed_ok=True,
-        identified_conflicts=data.get("identified_conflicts", []),
-        execution_plan=[str(x) for x in data.get("execution_plan", [])],
-        overridden_instructions=[str(x) for x in data.get("overridden_instructions", [])],
+        identified_conflicts=_as_conflict_list(data["identified_conflicts"], errors),
+        execution_plan=_as_id_list(data["execution_plan"], "execution_plan", errors),
+        overridden_instructions=_as_id_list(
+            data["overridden_instructions"], "overridden_instructions", errors
+        ),
+        schema_errors=errors,
     )
 
 
 # ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _f1(predicted: Set[str], truth: Set[str]) -> float:
+    """Set F1. Both empty -> 1.0 (nothing to find, nothing claimed)."""
+    if not predicted and not truth:
+        return 1.0
+    tp = len(predicted & truth)
+    if tp == 0:
+        return 0.0
+    return 2 * tp / (len(predicted) + len(truth))
+
+
+def _ids(values: Iterable[str]) -> Set[str]:
+    return {_norm_id(v) for v in values}
+
+
+# ---------------------------------------------------------------------------
 # Rubric 1 — Correct final state
-# Did the agent follow the right instructions and skip the right ones?
-# Weight in composite: 0.35
+# Did the agent follow the right instructions AND override the right ones?
+# Weight in composite: 0.45
 # ---------------------------------------------------------------------------
 
 def rubric_correct_final_state(output: AgentOutput, scenario: Scenario) -> float:
     """
-    F1 score comparing agent's execution plan to ground truth followed instructions.
-    Penalizes both false follows (following a loser) and false skips (skipping a winner).
+    Mean of followed-F1 (plan vs GT followed) and overridden-F1 (overridden list vs
+    GT overridden).
+      - An ID that is not in the scenario (made up) counts as a false positive in
+        BOTH lists, wherever it appears.
+      - An ID in both lists multiplies the result by (1 - overlap / n_instructions).
     """
     if not output.parsed_ok:
         return 0.0
 
-    gt_followed = set(scenario.ground_truth_followed)
-    agent_followed = set(output.execution_plan)
+    valid = _ids(ins.id for ins in scenario.instructions)
+    plan = set(output.execution_plan)
+    overridden = set(output.overridden_instructions)
 
-    if not gt_followed and not agent_followed:
-        return 1.0
+    hallucinated = (plan | overridden) - valid
+    followed_f1 = _f1(plan | hallucinated, _ids(scenario.ground_truth_followed))
+    overridden_f1 = _f1(overridden | hallucinated, _ids(scenario.ground_truth_overridden))
 
-    tp = len(gt_followed & agent_followed)
-    fp = len(agent_followed - gt_followed)
-    fn = len(gt_followed - agent_followed)
+    overlap = len(plan & overridden)
+    n = max(1, len(scenario.instructions))
+    split_factor = max(0.0, 1.0 - overlap / n)
 
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-
-    if precision + recall == 0:
-        return 0.0
-
-    f1 = 2 * precision * recall / (precision + recall)
-    return round(f1, 4)
+    return round((followed_f1 + overridden_f1) / 2 * split_factor, 4)
 
 
 # ---------------------------------------------------------------------------
-# Rubric 2 — No contradictory actions in the execution plan
-# Even if the agent gets some IDs wrong, its plan must be self-consistent.
+# Rubric 2 — No contradictions
+# On every real clash the plan must make exactly one choice.
 # Weight: 0.25
 # ---------------------------------------------------------------------------
 
+def _stated_resolutions(output: AgentOutput) -> Dict[frozenset, Set[str]]:
+    """Unordered pair -> every resolution the agent stated for it."""
+    stated: Dict[frozenset, Set[str]] = {}
+    for c in output.identified_conflicts:
+        if "instruction_a" not in c or "instruction_b" not in c:
+            continue
+        pair = frozenset((c["instruction_a"], c["instruction_b"]))
+        stated.setdefault(pair, set()).add(c.get("resolution", ""))
+    return stated
+
+
 def rubric_no_contradictions(output: AgentOutput, scenario: Scenario) -> float:
     """
-    Check that no two instructions in the agent's execution plan
-    share the same action_key (i.e. no conflicting actions co-exist in the plan).
-    Score = 1 - (contradictions_found / max_possible_contradictions).
+    Is the answer self-consistent on every real clash? For each ground-truth
+    conflict pair, credit 1 only if
+      - exactly one of its two IDs is in the execution plan (both = contradiction,
+        neither = clash not handled), AND
+      - the agent listed that pair, and the resolution it stated is the side that
+        is in the plan (saying "A wins" and then executing B is a contradiction).
+    Score = mean over GT conflicts; an empty plan scores 0. This rewards a
+    consistent, explicit choice, right or wrong; correctness is R1 and R3.
     """
     if not output.parsed_ok:
         return 0.0
 
-    # Build a map from instruction ID to action_key + action_value
-    id_to_instr = {ins.id: ins for ins in scenario.instructions}
+    plan = set(output.execution_plan)
+    if not scenario.conflicts:
+        return 1.0 if plan else 0.0
 
-    # Collect the action_keys present in the agent's plan
-    seen_keys: Dict[str, str] = {}  # action_key -> first action_value seen
-    contradictions = 0
-    total_pairs_checked = 0
-
-    for instr_id in output.execution_plan:
-        if instr_id not in id_to_instr:
-            continue
-        instr = id_to_instr[instr_id]
-        key = instr.action_key
-        val = instr.action_value
-
-        if key in seen_keys:
-            total_pairs_checked += 1
-            if seen_keys[key] != val:
-                contradictions += 1
-        else:
-            seen_keys[key] = val
-
-    if total_pairs_checked == 0:
-        return 1.0  # no opportunity for contradiction
-
-    return round(1.0 - (contradictions / total_pairs_checked), 4)
+    stated = _stated_resolutions(output)
+    consistent = 0
+    for c in scenario.conflicts:
+        pair = frozenset((_norm_id(c.instruction_a_id), _norm_id(c.instruction_b_id)))
+        chosen = plan & pair
+        if len(chosen) == 1 and stated.get(pair) == chosen:
+            consistent += 1
+    return round(consistent / len(scenario.conflicts), 4)
 
 
 # ---------------------------------------------------------------------------
-# Rubric 3 — Conflict identification + resolution accuracy
-# Two-part score: 60% pair identification F1, 40% resolution accuracy.
+# Rubric 3 — Conflict identification x resolution accuracy
 # Weight: 0.30
 # ---------------------------------------------------------------------------
 
 def rubric_conflict_identification(output: AgentOutput, scenario: Scenario) -> float:
     """
-    Two-part weighted score:
-      60% — F1 on conflict pair identification (frozenset of two IDs)
-      40% — Resolution accuracy (correct winner / matched pairs)
-
-    Wrong winner now directly reduces the score instead of just missing a bonus.
+    pair F1 x resolution accuracy.
+      - Pairs are unordered; a pair listed twice counts once.
+      - Resolution accuracy is over the correctly identified pairs. A pair counts as
+        correctly resolved only if every listing of it names the GT winner (listing
+        a pair twice with both winners does not hedge).
     """
     if not output.parsed_ok:
         return 0.0
 
-    gt_conflict_pairs = set(
-        frozenset([c.instruction_a_id, c.instruction_b_id])
-        for c in scenario.conflicts
-    )
-
-    agent_conflict_pairs = set()
-    for c in output.identified_conflicts:
-        if "instruction_a" in c and "instruction_b" in c:
-            agent_conflict_pairs.add(frozenset([c["instruction_a"], c["instruction_b"]]))
-
-    if not gt_conflict_pairs and not agent_conflict_pairs:
-        return 1.0
-
-    # --- Part 1: Pair identification F1 (60% of score) ---
-    tp = len(gt_conflict_pairs & agent_conflict_pairs)
-    fp = len(agent_conflict_pairs - gt_conflict_pairs)
-    fn = len(gt_conflict_pairs - agent_conflict_pairs)
-
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-
-    if precision + recall == 0:
-        return 0.0
-
-    f1 = 2 * precision * recall / (precision + recall)
-
-    # --- Part 2: Resolution accuracy (40% of score) ---
-    agent_conflict_map = {}
-    for c in output.identified_conflicts:
-        if "instruction_a" in c and "instruction_b" in c and "resolution" in c:
-            pair = frozenset([c["instruction_a"], c["instruction_b"]])
-            agent_conflict_map[pair] = c["resolution"]
-
-    gt_resolution_map = {
-        frozenset([c.instruction_a_id, c.instruction_b_id]): c.resolution_id
+    gt_resolution = {
+        frozenset((_norm_id(c.instruction_a_id), _norm_id(c.instruction_b_id))): _norm_id(c.resolution_id)
         for c in scenario.conflicts
     }
 
-    matched_pairs = gt_conflict_pairs & agent_conflict_pairs
-    if matched_pairs:
-        correctly_resolved = sum(
-            1 for pair in matched_pairs
-            if agent_conflict_map.get(pair) == gt_resolution_map.get(pair)
-        )
-        resolution_accuracy = correctly_resolved / len(matched_pairs)
-    else:
-        resolution_accuracy = 0.0
+    agent_resolutions = _stated_resolutions(output)
 
-    # Combine: 60% pair F1 + 40% resolution accuracy
-    score = 0.60 * f1 + 0.40 * resolution_accuracy
-    return round(score, 4)
+    gt_pairs = set(gt_resolution)
+    agent_pairs = set(agent_resolutions)
+    if not gt_pairs and not agent_pairs:
+        return 1.0
+
+    pair_f1 = _f1(agent_pairs, gt_pairs)
+    matched = gt_pairs & agent_pairs
+    if not matched:
+        return 0.0
+
+    correct = sum(1 for p in matched if agent_resolutions[p] == {gt_resolution[p]})
+    return round(pair_f1 * correct / len(matched), 4)
 
 
 # ---------------------------------------------------------------------------
-# Rubric 4 — Efficiency
-# Fewer unnecessary instructions in the plan = better.
-# An efficient plan contains exactly the needed instructions, nothing extra.
-# Weight: 0.10
+# Rubric 4 — Efficiency (logging only, NOT in the composite)
+# It is the Jaccard overlap of the plan with GT followed, i.e. a monotone function
+# of followed-F1, so weighting it would count R1 twice (FIX_BLUEPRINT.md C.2).
 # ---------------------------------------------------------------------------
 
 def rubric_efficiency(output: AgentOutput, scenario: Scenario) -> float:
-    """
-    Score based on plan compactness. Penalizes including unnecessary extra IDs.
-    Optimal plan = exactly the ground truth followed set.
-    """
+    """Jaccard overlap of the plan with the ground-truth followed set. Logging only."""
     if not output.parsed_ok:
         return 0.0
 
-    gt_followed = set(scenario.ground_truth_followed)
+    gt_followed = _ids(scenario.ground_truth_followed)
     agent_followed = set(output.execution_plan)
 
     extra = len(agent_followed - gt_followed)      # false follows (bloat)
@@ -259,49 +373,31 @@ def rubric_efficiency(output: AgentOutput, scenario: Scenario) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Rubric 5 — Format compliance
-# Valid JSON with correct structure = full score.
-# Partial structure gives partial credit.
-# Weight: 0.10
+# Rubric 5 — Format (a gate, NOT a weighted rubric)
 # ---------------------------------------------------------------------------
+
+SCHEMA_ERROR_FACTOR = 0.9
+
 
 def rubric_format_compliance(output: AgentOutput, scenario: Scenario) -> float:
     """
-    Check JSON structure compliance. Awards partial credit for partial structure.
+    The format gate's multiplier: 0.0 if no answer object was found, 0.9 if it was
+    found but had schema errors, 1.0 if clean. Logged; applied as a multiplier.
     """
     if not output.parsed_ok:
-        return 0.0  # no JSON at all
-
-    score = 0.4  # base: valid JSON
-
-    # Check for required top-level keys
-    if isinstance(output.identified_conflicts, list):
-        score += 0.2
-    if isinstance(output.execution_plan, list):
-        score += 0.2
-    if isinstance(output.overridden_instructions, list):
-        score += 0.1
-
-    # Check conflict entries have expected sub-keys
-    if output.identified_conflicts:
-        sample = output.identified_conflicts[0]
-        required_subkeys = {"instruction_a", "instruction_b", "conflict_type", "resolution", "reasoning"}
-        if isinstance(sample, dict) and required_subkeys.issubset(sample.keys()):
-            score += 0.1
-
-    return round(min(1.0, score), 4)
+        return 0.0
+    return SCHEMA_ERROR_FACTOR if output.schema_errors else 1.0
 
 
 # ---------------------------------------------------------------------------
 # Composite scorer
 # ---------------------------------------------------------------------------
 
+# The ONLY copy of the weights. Everything else must import this.
 RUBRIC_WEIGHTS = {
-    "correct_final_state":    0.35,
-    "no_contradictions":      0.25,
-    "conflict_identification": 0.20,
-    "efficiency":             0.10,
-    "format_compliance":      0.10,
+    "correct_final_state":     0.45,
+    "conflict_identification": 0.30,
+    "no_contradictions":       0.25,
 }
 
 
@@ -310,9 +406,11 @@ class ScoreBreakdown:
     correct_final_state: float
     no_contradictions: float
     conflict_identification: float
-    efficiency: float
-    format_compliance: float
+    efficiency: float          # logging only
+    format_compliance: float   # logging only: the format-gate multiplier
     composite: float
+    format_ok: bool = False    # an answer object with all required keys was found
+    schema_errors: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -322,35 +420,34 @@ class ScoreBreakdown:
             "efficiency":              self.efficiency,
             "format_compliance":       self.format_compliance,
             "composite":               self.composite,
+            "format_ok":               self.format_ok,
         }
 
 
-def score(raw_output: str, scenario: Scenario) -> ScoreBreakdown:
+def score(raw_output: Any, scenario: Scenario) -> ScoreBreakdown:
     """
-    Full scoring pipeline. Parse output then run all 5 rubrics.
-    Returns ScoreBreakdown with individual + composite score.
+    Full scoring pipeline. Parse output, run the rubrics, combine them with
+    RUBRIC_WEIGHTS, then apply the format gate. Never raises on agent output.
     """
     output = parse_agent_output(raw_output)
 
-    r1 = rubric_correct_final_state(output, scenario)
-    r2 = rubric_no_contradictions(output, scenario)
-    r3 = rubric_conflict_identification(output, scenario)
-    r4 = rubric_efficiency(output, scenario)
-    r5 = rubric_format_compliance(output, scenario)
+    parts = {
+        "correct_final_state":     rubric_correct_final_state(output, scenario),
+        "no_contradictions":       rubric_no_contradictions(output, scenario),
+        "conflict_identification": rubric_conflict_identification(output, scenario),
+    }
+    gate = rubric_format_compliance(output, scenario)
 
-    composite = (
-        RUBRIC_WEIGHTS["correct_final_state"]     * r1 +
-        RUBRIC_WEIGHTS["no_contradictions"]        * r2 +
-        RUBRIC_WEIGHTS["conflict_identification"]  * r3 +
-        RUBRIC_WEIGHTS["efficiency"]               * r4 +
-        RUBRIC_WEIGHTS["format_compliance"]        * r5
-    )
+    composite = sum(weight * parts[name] for name, weight in RUBRIC_WEIGHTS.items()) * gate
+    composite = min(1.0, max(0.0, composite))
 
     return ScoreBreakdown(
-        correct_final_state=r1,
-        no_contradictions=r2,
-        conflict_identification=r3,
-        efficiency=r4,
-        format_compliance=r5,
+        correct_final_state=parts["correct_final_state"],
+        no_contradictions=parts["no_contradictions"],
+        conflict_identification=parts["conflict_identification"],
+        efficiency=rubric_efficiency(output, scenario),
+        format_compliance=gate,
         composite=round(composite, 4),
+        format_ok=output.parsed_ok,
+        schema_errors=list(output.schema_errors),
     )
