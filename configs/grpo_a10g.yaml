@@ -1,0 +1,43 @@
+# A10G / L4 24 GB (bf16). Qwen2.5-3B in 4-bit + LoRA. ~300 optimiser steps (about $10-15 of GPU time).
+# This is also the config the training Space runs: training_space/train_script.py mirrors the values the
+# Space UI table shows, and tests/test_training_space_lock.py fails if they drift from this file.
+#   python -m training.train_grpo --config configs/grpo_a10g.yaml
+run_name: grpo_a10g
+output_dir: conflictbench-grpo-output/grpo_a10g
+results_dir: results
+seed: 42
+
+model: unsloth/Qwen2.5-3B-Instruct-bnb-4bit
+max_seq_length: 4096
+load_in_4bit: true
+lora_r: 16
+lora_alpha: 16
+lora_dropout: 0.0
+lora_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+train_size: 600
+val_size: 30
+train_difficulty_mix: {1: 0.4, 2: 0.4, 3: 0.2}
+val_difficulty_mix: {1: 0.4, 2: 0.4, 3: 0.2}
+max_prompt_tokens: 2560
+max_completion_tokens: 768     # 2560 + 768 = 3328 <= max_seq_length
+
+learning_rate: 5.0e-6
+warmup_steps: 20
+lr_scheduler_type: cosine
+weight_decay: 0.01
+beta: 0.04
+num_generations: 8
+per_device_train_batch_size: 8       # = num_generations
+gradient_accumulation_steps: 2       # -> 2 prompts x 8 completions per optimiser step
+temperature: 0.85
+top_p: 0.92
+epochs: 1.0
+max_steps: -1
+
+logging_steps: 5
+eval_steps: 50
+save_steps: 50
+save_total_limit: 3
+report_to: none
+hub_repo: null

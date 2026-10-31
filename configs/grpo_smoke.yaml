@@ -1,0 +1,42 @@
+# Plumbing test: Qwen2.5-0.5B, 10 steps, a few minutes on a free T4. Proves that dataset -> reward -> GRPO ->
+# eval -> checkpoint -> results/ all work. The numbers it produces mean nothing.
+#   python -m training.train_grpo --config configs/grpo_smoke.yaml
+run_name: grpo_smoke
+output_dir: conflictbench-grpo-output/grpo_smoke
+results_dir: results
+seed: 42
+
+model: unsloth/Qwen2.5-0.5B-Instruct
+max_seq_length: 2048
+load_in_4bit: false
+lora_r: 8
+lora_alpha: 8
+lora_dropout: 0.0
+lora_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+train_size: 20
+val_size: 4
+train_difficulty_mix: {1: 1.0}
+val_difficulty_mix: {1: 1.0}
+max_prompt_tokens: 1536
+max_completion_tokens: 384
+
+learning_rate: 5.0e-6
+warmup_steps: 1
+lr_scheduler_type: cosine
+weight_decay: 0.0
+beta: 0.04
+num_generations: 2
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 1       # 1 prompt x 2 completions per step
+temperature: 0.9
+top_p: 0.95
+epochs: 1.0
+max_steps: 10
+
+logging_steps: 1
+eval_steps: 5
+save_steps: 5
+save_total_limit: 2
+report_to: none
+hub_repo: null
