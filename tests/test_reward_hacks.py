@@ -2,8 +2,8 @@
 Reward-hacking regression tests.
 
 The thresholds are the Phase 2 targets from FIX_BLUEPRINT.md (P2-7) and are now
-enforced. The keyword shortcut stays xfail(strict=True) until Phase 3 makes the
-task itself harder: it needs a harder task, not a stricter reward.
+enforced. The fixtures use the default (Phase 3) generator, on which the keyword
+shortcut no longer works either; tests/test_difficulty.py has the full P3-7 checks.
 """
 
 import json
@@ -18,7 +18,7 @@ from verifier import score
 
 @pytest.fixture(scope="module")
 def scenarios():
-    return build_scenarios(per_difficulty=50, seed=1234)
+    return build_scenarios(per_difficulty=50, seed=1234)  # default generator (v2, train split)
 
 
 def _mean(name, scenarios):
@@ -54,7 +54,6 @@ def test_one_flipped_conflict_gets_partial_credit(scenarios):
     assert 0.4 <= d1 <= 0.85
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 3 (P3-1..P3-7) not done yet: task is a lookup")
 def test_keyword_shortcut_does_not_solve_task(scenarios):
     assert _mean("keyword_restrictive", scenarios) <= 0.35
 
