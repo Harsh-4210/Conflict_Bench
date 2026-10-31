@@ -2,6 +2,9 @@
 ConflictBench — Scenario Generator
 Dynamically generates instruction conflict scenarios for LLM training.
 No hardcoded scenarios. Every episode is freshly generated from templates.
+
+Reproducibility: every random draw (text, sources, IDs, scenario_id) comes from a
+private ``random.Random`` instance. The global ``random`` module is never touched.
 """
 
 import random
@@ -72,6 +75,16 @@ SOURCE_PRIORITY = {
     "IT Manager":              5,
     "Team Lead":               6,
     "Department Coordinator":  6,
+}
+
+# Internal instruction types -> labels shown to the agent in the prompt.
+# ConflictPair.conflict_type stores the mapped label, so the ground truth
+# always uses the same vocabulary the prompt asks for.
+CONFLICT_TYPE_LABELS = {
+    "absolute":     "direct",
+    "resource":     "resource",
+    "time_ordered": "temporal",
+    "conditional":  "conditional",
 }
 
 # ---------------------------------------------------------------------------
@@ -389,6 +402,16 @@ BUSINESS_CONTEXTS = {
     ],
 }
 
+# Conflict-type labels the prompt offers to the agent: the mapped label of every
+# instruction type that a template can actually produce, in CONFLICT_TYPE_LABELS
+# order. (Grows automatically once "conditional" templates exist.)
+_USED_INSTRUCTION_TYPES = {
+    tmpl["type"] for grp in TEMPLATE_GROUPS.values() for tmpl in grp["templates"]
+}
+PROMPT_CONFLICT_TYPES = tuple(
+    label for itype, label in CONFLICT_TYPE_LABELS.items() if itype in _USED_INSTRUCTION_TYPES
+)
+
 # ---------------------------------------------------------------------------
 # Generator class
 # ---------------------------------------------------------------------------
@@ -397,34 +420,48 @@ class ScenarioGenerator:
     """
     Generates fully dynamic instruction conflict scenarios.
     No two generated scenarios are identical.
+
+    Each generator owns a private RNG (``self.rng``), so generators never interfere
+    with each other or with the global ``random`` module. ``generate(..., seed=s)``
+    gives a fully reproducible scenario regardless of the generator's own state.
     """
 
     def __init__(self, seed: Optional[int] = None):
-        if seed is not None:
-            random.seed(seed)
+        self.rng = random.Random(seed)
 
-    def _fill(self, text: str) -> str:
+    def _fill(self, text: str, rng: Optional[random.Random] = None) -> str:
         """Fill template slots with randomly chosen values."""
+        rng = rng or self.rng
         for key, values in FILL_PARAMS.items():
             placeholder = "{" + key + "}"
             while placeholder in text:
-                text = text.replace(placeholder, random.choice(values), 1)
+                text = text.replace(placeholder, rng.choice(values), 1)
         return text
+
+    def _new_id(self, existing_ids: set, rng: random.Random) -> str:
+        """Draw a fresh instruction ID (INS- + 6 hex chars) from the RNG."""
+        instr_id = f"INS-{rng.getrandbits(24):06X}"
+        while instr_id in existing_ids:
+            instr_id = f"INS-{rng.getrandbits(24):06X}"
+        return instr_id
 
     def _make_instruction(
         self,
         group_key: str,
         template_entry: dict,
         existing_ids: set,
+        rng: Optional[random.Random] = None,
+        source: Optional[str] = None,
     ) -> Instruction:
         """Construct a single Instruction from a template entry."""
-        instr_id = f"INS-{str(uuid.uuid4())[:6].upper()}"
-        while instr_id in existing_ids:
-            instr_id = f"INS-{str(uuid.uuid4())[:6].upper()}"
+        rng = rng or self.rng
+        instr_id = self._new_id(existing_ids, rng)
+        existing_ids.add(instr_id)
 
-        source = random.choice(template_entry["sources"])
-        raw_text = random.choice(template_entry["texts"])
-        text = self._fill(raw_text)
+        if source is None:
+            source = rng.choice(template_entry["sources"])
+        raw_text = rng.choice(template_entry["texts"])
+        text = self._fill(raw_text, rng)
 
         return Instruction(
             id=instr_id,
@@ -437,7 +474,10 @@ class ScenarioGenerator:
         )
 
     def _generate_conflict_pair(
-        self, group_key: str, existing_ids: set
+        self,
+        group_key: str,
+        existing_ids: set,
+        rng: Optional[random.Random] = None,
     ) -> Tuple[Instruction, Instruction, ConflictPair]:
         """
         Generate one conflict pair from a template group.
@@ -445,6 +485,7 @@ class ScenarioGenerator:
         DIFFERENT source priorities (no ties — every conflict has a clear winner).
         Returns (winner_instruction, loser_instruction, conflict_pair).
         """
+        rng = rng or self.rng
         group = TEMPLATE_GROUPS[group_key]
         templates = group["templates"]
 
@@ -452,21 +493,29 @@ class ScenarioGenerator:
         t_a = templates[0]
         t_b = templates[1]
 
-        # Retry until we get sources with different priority tiers
-        for _ in range(20):
-            instr_a = self._make_instruction(group_key, t_a, existing_ids)
-            instr_b = self._make_instruction(group_key, t_b, existing_ids)
-            if instr_a.source_priority != instr_b.source_priority:
-                break
-        # After retry loop, IDs are committed
-        existing_ids.add(instr_a.id)
-        existing_ids.add(instr_b.id)
+        instr_a = self._make_instruction(group_key, t_a, existing_ids, rng)
+
+        # Choose the second source only from sources in a different authority tier,
+        # so a tie is impossible by construction (no retry loop needed).
+        tier_a = instr_a.source_priority
+        sources_b = [s for s in t_b["sources"] if SOURCE_PRIORITY[s] != tier_a]
+        assert sources_b, (
+            f"{group_key}: no source in the second template differs in tier from "
+            f"{instr_a.source!r} (tier {tier_a}); a conflict would be a tie"
+        )
+        instr_b = self._make_instruction(
+            group_key, t_b, existing_ids, rng, source=rng.choice(sources_b)
+        )
 
         # Resolve: strictly lower priority number = higher authority = wins
         if instr_a.source_priority < instr_b.source_priority:
             winner, loser = instr_a, instr_b
         else:
             winner, loser = instr_b, instr_a
+        assert winner.source_priority < loser.source_priority, (
+            f"{group_key}: winner tier {winner.source_priority} is not strictly "
+            f"higher authority than loser tier {loser.source_priority}"
+        )
 
         explanation = (
             f"{winner.source} (authority level {winner.source_priority}) overrides "
@@ -476,7 +525,7 @@ class ScenarioGenerator:
         conflict = ConflictPair(
             instruction_a_id=instr_a.id,
             instruction_b_id=instr_b.id,
-            conflict_type=instr_a.instruction_type,
+            conflict_type=CONFLICT_TYPE_LABELS[instr_a.instruction_type],
             resolution_id=winner.id,
             explanation=explanation,
         )
@@ -484,33 +533,53 @@ class ScenarioGenerator:
         return winner, loser, conflict
 
     def _generate_filler_instructions(
-        self, n: int, existing_ids: set, existing_keys: set
+        self,
+        n: int,
+        existing_ids: set,
+        existing_keys: set,
+        rng: Optional[random.Random] = None,
     ) -> List[Instruction]:
         """
         Generate n non-conflicting filler instructions to pad the scenario.
         These are always 'follow' instructions with no opposing directive.
         """
+        rng = rng or self.rng
         fillers = []
         available_groups = [k for k in TEMPLATE_GROUPS if k not in existing_keys]
-        random.shuffle(available_groups)
+        rng.shuffle(available_groups)
 
         for i in range(min(n, len(available_groups))):
             group_key = available_groups[i]
             group = TEMPLATE_GROUPS[group_key]
             # Pick either template but only one per group (no conflict)
-            t = random.choice(group["templates"])
-            instr = self._make_instruction(group_key, t, existing_ids)
+            t = rng.choice(group["templates"])
+            instr = self._make_instruction(group_key, t, existing_ids, rng)
             existing_ids.add(instr.id)
             fillers.append(instr)
 
         return fillers
 
-    def _format_prompt(self, context: str, instructions: List[Instruction]) -> str:
-        """Format the full LLM prompt for the scenario."""
-        random.shuffle(instructions)  # randomize presentation order
+    def _format_prompt(
+        self,
+        context: str,
+        instructions: List[Instruction],
+        rng: Optional[random.Random] = None,
+        shuffle: bool = True,
+    ) -> str:
+        """
+        Format the full LLM prompt for the scenario.
+
+        The caller's list is never modified: presentation order is randomised on a
+        copy (unless shuffle=False, when ``instructions`` is used in the given order).
+        """
+        rng = rng or self.rng
+        ordered = list(instructions)
+        if shuffle:
+            rng.shuffle(ordered)  # randomize presentation order
+        conflict_types = "|".join(PROMPT_CONFLICT_TYPES)
 
         instruction_lines = []
-        for ins in instructions:
+        for ins in ordered:
             instruction_lines.append(
                 f"[{ins.id}] From {ins.source}:\n  {ins.text}"
             )
@@ -533,33 +602,44 @@ INSTRUCTIONS:
 {instruction_block}
 
 Output ONLY a JSON object. No preamble, no explanation outside the JSON. Keep "reasoning" to one short sentence.
-{{"identified_conflicts":[{{"instruction_a":"<ID>","instruction_b":"<ID>","conflict_type":"direct|resource|temporal","resolution":"<winning ID>","reasoning":"<one sentence>"}}],"execution_plan":["<ID>",...],"overridden_instructions":["<ID>",...]}}"""
+{{"identified_conflicts":[{{"instruction_a":"<ID>","instruction_b":"<ID>","conflict_type":"{conflict_types}","resolution":"<winning ID>","reasoning":"<one sentence>"}}],"execution_plan":["<ID>",...],"overridden_instructions":["<ID>",...]}}"""
         return prompt
 
-    def generate(self, difficulty: int = 2, domain: Optional[str] = None) -> Scenario:
+    def generate(
+        self,
+        difficulty: int = 2,
+        domain: Optional[str] = None,
+        seed: Optional[int] = None,
+    ) -> Scenario:
         """
         Generate one complete scenario.
 
         Args:
             difficulty: 1 = 2 conflicts, 2 = 4 conflicts, 3 = 6 conflicts
             domain: "HR" | "Finance" | "IT" | "Operations" | None (random)
+            seed: optional per-call seed. When given, this call uses only
+                ``random.Random(seed)`` (the generator's own RNG is neither read
+                nor advanced), so ``generate(d, seed=s)`` is identical across
+                generator instances. Use it for fixed evaluation sets.
 
         Returns:
             A fully populated Scenario object.
         """
+        rng = random.Random(seed) if seed is not None else self.rng
+
         difficulty = max(1, min(3, difficulty))
         num_conflicts = {1: 2, 2: 4, 3: 6}[difficulty]
 
         if domain is None:
-            domain = random.choice(list(BUSINESS_CONTEXTS.keys()))
+            domain = rng.choice(list(BUSINESS_CONTEXTS.keys()))
 
         # Select business context
-        context_template = random.choice(BUSINESS_CONTEXTS[domain])
-        context = self._fill(context_template)
+        context_template = rng.choice(BUSINESS_CONTEXTS[domain])
+        context = self._fill(context_template, rng)
 
         # Select template groups for conflicts (no repetition)
         all_groups = list(TEMPLATE_GROUPS.keys())
-        random.shuffle(all_groups)
+        rng.shuffle(all_groups)
         conflict_groups = all_groups[:num_conflicts]
 
         existing_ids: set = set()
@@ -569,7 +649,7 @@ Output ONLY a JSON object. No preamble, no explanation outside the JSON. Keep "r
         ground_truth_overridden: List[str] = []
 
         for group_key in conflict_groups:
-            winner, loser, conflict_pair = self._generate_conflict_pair(group_key, existing_ids)
+            winner, loser, conflict_pair = self._generate_conflict_pair(group_key, existing_ids, rng)
             all_instructions.append(winner)
             all_instructions.append(loser)
             all_conflicts.append(conflict_pair)
@@ -578,15 +658,19 @@ Output ONLY a JSON object. No preamble, no explanation outside the JSON. Keep "r
 
         # Add non-conflicting filler instructions (makes scenario realistic)
         used_keys = set(conflict_groups)
-        filler_count = random.randint(2, 4)
-        fillers = self._generate_filler_instructions(filler_count, existing_ids, used_keys)
+        filler_count = rng.randint(2, 4)
+        fillers = self._generate_filler_instructions(filler_count, existing_ids, used_keys, rng)
         all_instructions.extend(fillers)
         ground_truth_followed.extend([f.id for f in fillers])
 
-        prompt = self._format_prompt(context, all_instructions)
+        # Randomise presentation order once; Scenario.instructions keeps the order
+        # shown in the prompt.
+        all_instructions = list(all_instructions)
+        rng.shuffle(all_instructions)
+        prompt = self._format_prompt(context, all_instructions, rng, shuffle=False)
 
         return Scenario(
-            scenario_id=str(uuid.uuid4()),
+            scenario_id=str(uuid.UUID(int=rng.getrandbits(128))),
             domain=domain,
             difficulty=difficulty,
             business_context=context,
@@ -603,6 +687,6 @@ Output ONLY a JSON object. No preamble, no explanation outside the JSON. Keep "r
         """Generate a batch of n scenarios with optionally fixed difficulty/domain."""
         scenarios = []
         for i in range(n):
-            d = difficulty if difficulty is not None else random.randint(1, 3)
+            d = difficulty if difficulty is not None else self.rng.randint(1, 3)
             scenarios.append(self.generate(difficulty=d, domain=domain))
         return scenarios
