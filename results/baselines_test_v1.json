@@ -1,0 +1,147 @@
+{
+  "seed": 1234,
+  "per_difficulty": 200,
+  "generator": "v2 split=test",
+  "strategies": {
+    "empty": {
+      "mean": 0.0,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 0.0,
+        "2": 0.0,
+        "3": 0.0
+      },
+      "n": 600
+    },
+    "follow_all": {
+      "mean": 0.1879,
+      "std": 0.0094,
+      "by_difficulty": {
+        "1": 0.1908,
+        "2": 0.1865,
+        "3": 0.1865
+      },
+      "n": 600
+    },
+    "override_all": {
+      "mean": 0.0979,
+      "std": 0.0168,
+      "by_difficulty": {
+        "1": 0.0919,
+        "2": 0.1006,
+        "3": 0.1011
+      },
+      "n": 600
+    },
+    "random_single": {
+      "mean": 0.023,
+      "std": 0.0178,
+      "by_difficulty": {
+        "1": 0.0335,
+        "2": 0.021,
+        "3": 0.0144
+      },
+      "n": 600
+    },
+    "random_half": {
+      "mean": 0.216,
+      "std": 0.0519,
+      "by_difficulty": {
+        "1": 0.214,
+        "2": 0.218,
+        "3": 0.2159
+      },
+      "n": 600
+    },
+    "hallucinated_ids": {
+      "mean": 0.0,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 0.0,
+        "2": 0.0,
+        "3": 0.0
+      },
+      "n": 600
+    },
+    "keyword_restrictive": {
+      "mean": 0.1879,
+      "std": 0.0094,
+      "by_difficulty": {
+        "1": 0.1908,
+        "2": 0.1865,
+        "3": 0.1865
+      },
+      "n": 600
+    },
+    "keyword_restrictive_v2": {
+      "mean": 0.6614,
+      "std": 0.1343,
+      "by_difficulty": {
+        "1": 0.6729,
+        "2": 0.6497,
+        "3": 0.6617
+      },
+      "n": 600
+    },
+    "oracle_lookup_v1": {
+      "mean": 0.1879,
+      "std": 0.0094,
+      "by_difficulty": {
+        "1": 0.1908,
+        "2": 0.1865,
+        "3": 0.1865
+      },
+      "n": 600
+    },
+    "oracle_lookup": {
+      "mean": 0.812,
+      "std": 0.1216,
+      "by_difficulty": {
+        "1": 0.8215,
+        "2": 0.8061,
+        "3": 0.8084
+      },
+      "n": 600
+    },
+    "latest_wins": {
+      "mean": 0.723,
+      "std": 0.1358,
+      "by_difficulty": {
+        "1": 0.7248,
+        "2": 0.7299,
+        "3": 0.7142
+      },
+      "n": 600
+    },
+    "resolver": {
+      "mean": 1.0,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      },
+      "n": 600
+    },
+    "ground_truth": {
+      "mean": 1.0,
+      "std": 0.0,
+      "by_difficulty": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      },
+      "n": 600
+    },
+    "gt_one_conflict_flipped": {
+      "mean": 0.8415,
+      "std": 0.0724,
+      "by_difficulty": {
+        "1": 0.7441,
+        "2": 0.8679,
+        "3": 0.9127
+      },
+      "n": 600
+    }
+  }
+}
