@@ -1,2 +1,3 @@
 results/data/*.jsonl -text
 data/*.jsonl -text
+*.sha256 text eol=lf
