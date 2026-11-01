@@ -1,106 +1,221 @@
 """
 ConflictBench — HuggingFace Spaces Demo (Gradio)
 Premium UI Redesign — Dark Glassmorphism + Violet/Cyan Palette
-Showcases before/after training: base model vs fine-tuned model side by side.
-Live scoring with animated reward breakdown.
+Compares the base model with the LoRA-fine-tuned model on the same scenario.
+Live scoring with a reward breakdown.
+
+Both models are the SAME network: the LoRA adapter is loaded once; the "base"
+run executes inside ``model.disable_adapter()`` and the "trained" run uses the
+adapter. Models are loaded lazily on the first inference call, so importing
+this module needs neither torch nor a download.
+
 Deploy: push this file + requirements to a HF Space (SDK: gradio).
 """
 
-import sys
-import os
+import html
 import json
-import random
+import logging
+import os
+import sys
+import threading
 from pathlib import Path
 
 import gradio as gr
-import torch
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from generator import ScenarioGenerator
+from prompts import build_messages
 from verifier import score as compute_score, parse_agent_output
+import verifier as _verifier
+
+logger = logging.getLogger("conflictbench.app")
 
 # ---------------------------------------------------------------------------
-# Model loading
+# Model loading (lazy)
 # ---------------------------------------------------------------------------
 
-BASE_MODEL_ID    = "Qwen/Qwen2.5-3B-Instruct"
-TRAINED_MODEL_ID = os.getenv("TRAINED_MODEL_ID", None)
+BASE_MODEL_ID = os.getenv("BASE_MODEL_ID", "Qwen/Qwen2.5-3B-Instruct")
+DEFAULT_ADAPTER_ID = "Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora"
+# CONFLICTBENCH_ADAPTER (or the legacy TRAINED_MODEL_ID) overrides the adapter;
+# set it to an empty string to run the base model only.
+ADAPTER_ID = os.getenv("CONFLICTBENCH_ADAPTER", os.getenv("TRAINED_MODEL_ID", DEFAULT_ADAPTER_ID))
 
-_base_model      = None
-_base_tokenizer  = None
-_trained_model   = None
-_trained_tokenizer = None
-_generator       = ScenarioGenerator(seed=None)
+MAX_PROMPT_TOKENS = 3072   # longer prompts are rejected, never truncated
+MAX_NEW_TOKENS = 512
+SAMPLE_TEMPERATURE = 0.7
+SAMPLE_TOP_P = 0.9
+
+_generator = ScenarioGenerator(seed=None)
+_load_lock = threading.Lock()
+_state = {
+    "loaded": False,
+    "model": None,
+    "tokenizer": None,
+    "adapter_loaded": False,
+    "adapter_error": None,
+    "selfcheck": None,      # True = outputs differ with/without adapter, False = identical
+}
 
 
-def load_models():
-    global _base_model, _base_tokenizer, _trained_model, _trained_tokenizer
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+class PromptTooLongError(ValueError):
+    """The chat-templated prompt exceeds MAX_PROMPT_TOKENS."""
 
-    print("Loading base model…")
-    _base_tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
-    _base_model     = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_ID,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto" if torch.cuda.is_available() else "cpu",
+
+def _model_device(model):
+    try:
+        return model.device
+    except Exception:
+        import torch
+        return next(model.parameters()).device
+
+
+def _to_input_ids(encoded):
+    """apply_chat_template returns a tensor (older transformers) or a BatchEncoding (newer)."""
+    if hasattr(encoded, "keys") and "input_ids" in encoded:
+        return encoded["input_ids"]
+    return encoded
+
+
+def generate_text(model, tokenizer, scenario, sample: bool = False,
+                  max_new_tokens: int = MAX_NEW_TOKENS) -> str:
+    """Run one completion for ``scenario`` using the training chat format.
+
+    Greedy by default. Raises PromptTooLongError instead of truncating.
+    The caller is responsible for adapter on/off (see run_model).
+    """
+    import torch
+
+    encoded = tokenizer.apply_chat_template(
+        build_messages(scenario),
+        add_generation_prompt=True,
+        return_tensors="pt",
     )
-
-    if TRAINED_MODEL_ID:
-        print(f"Loading trained LoRA adapter from {TRAINED_MODEL_ID}…")
-        try:
-            from peft import PeftModel
-            _trained_tokenizer = _base_tokenizer  # LoRA shares base tokenizer
-            _trained_model = PeftModel.from_pretrained(
-                _base_model,
-                TRAINED_MODEL_ID,
-            )
-            _trained_model.eval()
-            print("✅ LoRA adapter loaded and merged on top of base model.")
-        except ImportError:
-            print("⚠ peft not installed — falling back to base model for trained slot.")
-            _trained_model = _base_model
-            _trained_tokenizer = _base_tokenizer
-        except Exception as e:
-            print(f"⚠ Failed to load LoRA adapter: {e}")
-            _trained_tokenizer = AutoTokenizer.from_pretrained(TRAINED_MODEL_ID)
-            _trained_model = AutoModelForCausalLM.from_pretrained(
-                TRAINED_MODEL_ID,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                device_map="auto" if torch.cuda.is_available() else "cpu",
-            )
-    else:
-        print("No TRAINED_MODEL_ID set — demo runs base model only.")
-
-
-def infer(model, tokenizer, prompt: str, max_new_tokens: int = 512) -> str:
-    if model is None:
-        return '{"error": "Model not loaded"}'
-    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1800)
-    if torch.cuda.is_available():
-        inputs = {k: v.cuda() for k, v in inputs.items()}
-    with torch.no_grad():
-        out = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.9,
-            pad_token_id=tokenizer.eos_token_id,
+    input_ids = _to_input_ids(encoded)
+    n_prompt = int(input_ids.shape[-1])
+    if n_prompt > MAX_PROMPT_TOKENS:
+        raise PromptTooLongError(
+            f"Prompt is {n_prompt} tokens; the limit is {MAX_PROMPT_TOKENS}. "
+            "It was NOT truncated because that would cut off the output-format instructions."
         )
-    response = tokenizer.decode(
-        out[0][inputs["input_ids"].shape[1]:],
-        skip_special_tokens=True,
+
+    input_ids = input_ids.to(_model_device(model))
+    attention_mask = torch.ones_like(input_ids)
+
+    gen_kwargs = dict(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        max_new_tokens=max_new_tokens,
+        pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id,
     )
-    return response.strip()
+    if sample:
+        gen_kwargs.update(do_sample=True, temperature=SAMPLE_TEMPERATURE, top_p=SAMPLE_TOP_P)
+    else:
+        gen_kwargs.update(do_sample=False)
+
+    with torch.no_grad():
+        out = model.generate(**gen_kwargs)
+    return tokenizer.decode(out[0][n_prompt:], skip_special_tokens=True).strip()
+
+
+def _selfcheck(model, tokenizer) -> None:
+    """Same prompt, greedy, adapter on vs off. Identical output means the adapter has no effect."""
+    sc = ScenarioGenerator(seed=0).generate(difficulty=1)
+    with_adapter = generate_text(model, tokenizer, sc, sample=False, max_new_tokens=96)
+    with model.disable_adapter():
+        without_adapter = generate_text(model, tokenizer, sc, sample=False, max_new_tokens=96)
+    _state["selfcheck"] = with_adapter != without_adapter
+    if not _state["selfcheck"]:
+        logger.warning(
+            "Self-check FAILED: outputs with and without the LoRA adapter are identical. "
+            "The base-vs-trained comparison would be meaningless (adapter missing, zero-initialised, "
+            "or not applied)."
+        )
+    else:
+        logger.info("Self-check passed: adapter changes the model output.")
+
+
+def load_models() -> dict:
+    """Load the base model once and attach the LoRA adapter (idempotent, thread-safe)."""
+    with _load_lock:
+        if _state["loaded"]:
+            return _state
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        cuda = torch.cuda.is_available()
+        logger.info("Loading base model %s ...", BASE_MODEL_ID)
+        tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
+        model = AutoModelForCausalLM.from_pretrained(
+            BASE_MODEL_ID,
+            torch_dtype=torch.float16 if cuda else torch.float32,
+            device_map="auto" if cuda else None,
+        )
+
+        if ADAPTER_ID:
+            try:
+                from peft import PeftModel
+                logger.info("Loading LoRA adapter %s ...", ADAPTER_ID)
+                model = PeftModel.from_pretrained(model, ADAPTER_ID)
+                _state["adapter_loaded"] = True
+            except Exception as e:  # missing peft, bad repo, no network ...
+                _state["adapter_error"] = f"{type(e).__name__}: {e}"
+                logger.warning("Could not load LoRA adapter %s: %s", ADAPTER_ID, e)
+        else:
+            _state["adapter_error"] = "No adapter configured (CONFLICTBENCH_ADAPTER is empty)."
+        model.eval()
+
+        _state.update(model=model, tokenizer=tokenizer)
+        if _state["adapter_loaded"]:
+            try:
+                _selfcheck(model, tokenizer)
+            except Exception as e:
+                logger.warning("Adapter self-check could not run: %s", e)
+        _state["loaded"] = True
+        return _state
+
+
+def run_model(which: str, scenario, sample: bool = False) -> str:
+    """Generate a completion from the 'base' or 'trained' variant of the shared model."""
+    st = load_models()
+    model, tokenizer = st["model"], st["tokenizer"]
+    if which == "trained":
+        if not st["adapter_loaded"]:
+            raise RuntimeError(f"Trained adapter not available: {st['adapter_error']}")
+        return generate_text(model, tokenizer, scenario, sample=sample)
+    if st["adapter_loaded"]:
+        with model.disable_adapter():
+            return generate_text(model, tokenizer, scenario, sample=sample)
+    return generate_text(model, tokenizer, scenario, sample=sample)
 
 
 # ---------------------------------------------------------------------------
 # HTML Renderers
 # ---------------------------------------------------------------------------
 
-def _rubric_bar(label: str, value: float, weight_pct: int) -> str:
-    pct   = int(value * 100)
+def _esc(value) -> str:
+    """HTML-escape any model-supplied value (coerced to str first)."""
+    return html.escape(str(value), quote=True)
+
+
+PENDING_SCORE_HTML = "<div class='score-wrap pending-state'>Run inference to see scores</div>"
+PENDING_OUTPUT_HTML = "<div class='jv-root pending-state'>Output will appear here</div>"
+
+
+def _error_html(title: str, detail: str = "") -> str:
+    return f"""
+        <div class="parse-error">
+          <div class="pe-title">⚠ {_esc(title)}</div>
+          <pre class="pe-raw">{_esc(detail)[:1200]}</pre>
+        </div>"""
+
+
+def _rubric_bar(label: str, value: float, weight_pct) -> str:
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        value = 0.0
+    pct   = max(0, min(100, int(value * 100)))
     grade = "A" if pct >= 80 else ("B" if pct >= 60 else ("C" if pct >= 40 else "D"))
     color = (
         "#10b981" if pct >= 80 else
@@ -108,11 +223,12 @@ def _rubric_bar(label: str, value: float, weight_pct: int) -> str:
         "#f59e0b" if pct >= 40 else
         "#f43f5e"
     )
+    weight = f'<span class="rb-weight">×{weight_pct}%</span>' if weight_pct is not None else ""
     return f"""
     <div class="rb-row">
       <div class="rb-meta">
         <span class="rb-label">{label}</span>
-        <span class="rb-weight">×{weight_pct}%</span>
+        {weight}
       </div>
       <div class="rb-track">
         <div class="rb-fill" style="width:{pct}%;background:{color};"></div>
@@ -124,19 +240,30 @@ def _rubric_bar(label: str, value: float, weight_pct: int) -> str:
     </div>"""
 
 
+def _weight_pct(key: str):
+    """Weight of a rubric in the composite, read from the verifier (None if unavailable)."""
+    weights = getattr(_verifier, "RUBRIC_WEIGHTS", None)
+    try:
+        return int(round(float(weights[key]) * 100))
+    except Exception:
+        return None
+
+
 def format_score_html(bd: dict) -> str:
-    composite = bd.get("composite", 0.0)
+    composite = float(bd.get("composite", 0.0) or 0.0)
+    composite = max(0.0, min(1.0, composite))
     cpct      = int(composite * 100)
     c_color   = "#10b981" if cpct >= 80 else ("#06b6d4" if cpct >= 60 else ("#f59e0b" if cpct >= 40 else "#f43f5e"))
     tier      = "EXCELLENT" if cpct >= 80 else ("GOOD" if cpct >= 60 else ("FAIR" if cpct >= 40 else "POOR"))
 
-    bars = (
-        _rubric_bar("Correct Final State",     bd.get("correct_final_state",     0.0), 35) +
-        _rubric_bar("No Contradictions",        bd.get("no_contradictions",        0.0), 25) +
-        _rubric_bar("Conflict Identification",  bd.get("conflict_identification",  0.0), 20) +
-        _rubric_bar("Plan Efficiency",          bd.get("efficiency",               0.0), 10) +
-        _rubric_bar("Format Compliance",        bd.get("format_compliance",        0.0), 10)
+    rows = (
+        ("Correct Final State",    "correct_final_state"),
+        ("No Contradictions",      "no_contradictions"),
+        ("Conflict Identification", "conflict_identification"),
+        ("Plan Efficiency",        "efficiency"),
+        ("Format Compliance",      "format_compliance"),
     )
+    bars = "".join(_rubric_bar(label, bd.get(key, 0.0), _weight_pct(key)) for label, key in rows)
 
     return f"""
     <div class="score-wrap">
@@ -158,41 +285,29 @@ def format_score_html(bd: dict) -> str:
     </div>"""
 
 
-def format_json_html(raw: str) -> str:
-    parsed = parse_agent_output(raw)
-    if parsed is None or not parsed.parsed_ok:
-        raw_escaped = str(raw).replace("<", "&lt;").replace(">", "&gt;")
+def _as_list(value) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _conflict_card(c) -> str:
+    if not isinstance(c, dict):
         return f"""
-        <div class="parse-error">
-          <div class="pe-title">⚠ Parse Failed</div>
-          <pre class="pe-raw">{raw_escaped[:1200]}</pre>
+        <div class="conflict-card">
+          <div class="conflict-row"><span class="meta-key">Malformed entry</span>
+          <span class="meta-val">{_esc(str(c)[:200])}</span></div>
         </div>"""
-
-    # ── Execution Plan ──────────────────────────────────────────────────
-    plan_pills = "".join(
-        f'<span class="pill pill-follow">{ins}</span>'
-        for ins in (parsed.execution_plan or [])
-    ) or '<span class="empty-state">None</span>'
-
-    # ── Overridden ──────────────────────────────────────────────────────
-    over_pills = "".join(
-        f'<span class="pill pill-override">{ins}</span>'
-        for ins in (parsed.overridden_instructions or [])
-    ) or '<span class="empty-state">None</span>'
-
-    # ── Conflicts ───────────────────────────────────────────────────────
-    conflicts_html = ""
-    for c in (parsed.identified_conflicts or []):
-        res       = c.get("resolution", "UNKNOWN")
-        ctype     = c.get("conflict_type", "N/A")
-        reasoning = c.get("reasoning", "No reasoning provided.")[:200]
-        res_class = "pill-follow" if res != "UNKNOWN" else "pill-override"
-        conflicts_html += f"""
+    res       = _esc(str(c.get("resolution", "UNKNOWN")))
+    ctype     = _esc(str(c.get("conflict_type", "N/A")))
+    reasoning = _esc(str(c.get("reasoning", "No reasoning provided."))[:200])
+    ins_a     = _esc(str(c.get("instruction_a", "?")))
+    ins_b     = _esc(str(c.get("instruction_b", "?")))
+    res_class = "pill-follow" if res != "UNKNOWN" else "pill-override"
+    return f"""
         <div class="conflict-card">
           <div class="conflict-ids">
-            <span class="pill pill-a">{c.get('instruction_a','?')}</span>
+            <span class="pill pill-a">{ins_a}</span>
             <span class="vs-sep">⚡ vs</span>
-            <span class="pill pill-b">{c.get('instruction_b','?')}</span>
+            <span class="pill pill-b">{ins_b}</span>
           </div>
           <div class="conflict-row"><span class="meta-key">Type</span><span class="meta-val">{ctype}</span></div>
           <div class="conflict-reasoning">"{reasoning}"</div>
@@ -202,6 +317,28 @@ def format_json_html(raw: str) -> str:
           </div>
         </div>"""
 
+
+def format_json_html(raw) -> str:
+    try:
+        parsed = parse_agent_output(raw)
+    except Exception as e:  # unexpected JSON shape the parser does not handle
+        return _error_html("Parse Failed", f"{type(e).__name__}: {e}\n\n{raw}")
+    if parsed is None or not parsed.parsed_ok:
+        return _error_html("Parse Failed", str(raw))
+
+    plan      = _as_list(parsed.execution_plan)
+    overridden = _as_list(parsed.overridden_instructions)
+    conflicts = _as_list(parsed.identified_conflicts)
+
+    plan_pills = "".join(
+        f'<span class="pill pill-follow">{_esc(ins)}</span>' for ins in plan
+    ) or '<span class="empty-state">None</span>'
+
+    over_pills = "".join(
+        f'<span class="pill pill-override">{_esc(ins)}</span>' for ins in overridden
+    ) or '<span class="empty-state">None</span>'
+
+    conflicts_html = "".join(_conflict_card(c) for c in conflicts)
     if not conflicts_html:
         conflicts_html = '<span class="empty-state">No conflicts identified.</span>'
 
@@ -209,19 +346,19 @@ def format_json_html(raw: str) -> str:
     <div class="jv-root">
       <div class="jv-section">
         <div class="jv-header"><span class="jv-icon">✅</span>Execution Plan
-          <span class="jv-count">{len(parsed.execution_plan or [])}</span>
+          <span class="jv-count">{len(plan)}</span>
         </div>
         <div class="jv-pills">{plan_pills}</div>
       </div>
       <div class="jv-section">
         <div class="jv-header"><span class="jv-icon">🚫</span>Overridden
-          <span class="jv-count">{len(parsed.overridden_instructions or [])}</span>
+          <span class="jv-count">{len(overridden)}</span>
         </div>
         <div class="jv-pills">{over_pills}</div>
       </div>
       <div class="jv-section">
         <div class="jv-header"><span class="jv-icon">⚔️</span>Conflict Analysis
-          <span class="jv-count">{len(parsed.identified_conflicts or [])}</span>
+          <span class="jv-count">{len(conflicts)}</span>
         </div>
         {conflicts_html}
       </div>
@@ -257,48 +394,52 @@ def generate_scenario(difficulty: int):
     diff_map = {1: "Easy", 2: "Medium", 3: "Hard"}
     meta_html = f"""
     <div class="meta-strip">
-      <div class="meta-chip"><span class="mc-label">Domain</span><span class="mc-val">{scenario.domain}</span></div>
+      <div class="meta-chip"><span class="mc-label">Domain</span><span class="mc-val">{_esc(scenario.domain)}</span></div>
       <div class="meta-chip"><span class="mc-label">Difficulty</span>
-        <span class="mc-val diff-{difficulty}">{diff_map.get(difficulty,'?')}</span></div>
+        <span class="mc-val diff-{int(difficulty)}">{diff_map.get(difficulty,'?')}</span></div>
       <div class="meta-chip"><span class="mc-label">Instructions</span>
         <span class="mc-val">{len(scenario.instructions)}</span></div>
       <div class="meta-chip"><span class="mc-label">Conflicts</span>
         <span class="mc-val">{len(scenario.conflicts)}</span></div>
     </div>"""
-    reset_score = "<div class='score-wrap pending-state'>Run inference to see scores</div>"
-    reset_out   = "<div class='jv-root pending-state'>Output will appear here</div>"
     return (
         scenario,
         scenario.prompt,
         meta_html,
         gr.update(interactive=True),
         gr.update(interactive=True),
-        reset_score, reset_score,
-        reset_out,   reset_out,
+        PENDING_SCORE_HTML, PENDING_SCORE_HTML,
+        PENDING_OUTPUT_HTML, PENDING_OUTPUT_HTML,
     )
 
 
-def run_base_model(scenario):
+def _run_and_render(which: str, scenario, sample: bool):
+    """Shared body of the two run buttons. Returns (output_html, score_html)."""
     if scenario is None:
         gr.Warning("Generate a scenario first!")
         return "", ""
-    gr.Info("Running base model inference…")
-    response  = infer(_base_model, _base_tokenizer, scenario.prompt)
-    breakdown = compute_score(response, scenario)
-    return format_json_html(response), format_score_html(breakdown.to_dict())
+    gr.Info(f"Running {'fine-tuned' if which == 'trained' else 'base'} model inference…")
+    try:
+        response = run_model(which, scenario, sample=bool(sample))
+    except PromptTooLongError as e:
+        return _error_html("Prompt too long", str(e)), PENDING_SCORE_HTML
+    except Exception as e:
+        logger.exception("Inference failed")
+        return _error_html("Inference failed", f"{type(e).__name__}: {e}"), PENDING_SCORE_HTML
+    try:
+        breakdown = compute_score(response, scenario).to_dict()
+        score_html = format_score_html(breakdown)
+    except Exception as e:
+        score_html = _error_html("Scoring failed", f"{type(e).__name__}: {e}")
+    return format_json_html(response), score_html
 
 
-def run_trained_model(scenario):
-    if scenario is None:
-        gr.Warning("Generate a scenario first!")
-        return "", ""
-    if _trained_model is None:
-        gr.Warning("Trained model not loaded — set TRAINED_MODEL_ID env var.")
-        return "", ""
-    gr.Info("Running fine-tuned model inference…")
-    response  = infer(_trained_model, _trained_tokenizer, scenario.prompt)
-    breakdown = compute_score(response, scenario)
-    return format_json_html(response), format_score_html(breakdown.to_dict())
+def run_base_model(scenario, sample=False):
+    return _run_and_render("base", scenario, sample)
+
+
+def run_trained_model(scenario, sample=False):
+    return _run_and_render("trained", scenario, sample)
 
 
 # ---------------------------------------------------------------------------
@@ -839,50 +980,57 @@ HEADER_HTML = """
 </div>
 """
 
-METHODOLOGY_HTML = """
-<div class="methodology-card">
-  <div class="mc-item">
-    <div class="mc-item-num">01</div>
-    <div class="mc-item-title">Format Compliance</div>
-    <div class="mc-item-body">Validates JSON structure with all required keys and sub-fields.</div>
-    <span class="weight-tag">×10%</span>
-  </div>
-  <div class="mc-item">
-    <div class="mc-item-num">02</div>
-    <div class="mc-item-title">Conflict Identification</div>
-    <div class="mc-item-body">F1 score on detected conflict pairs plus resolution accuracy bonus.</div>
-    <span class="weight-tag">×20%</span>
-  </div>
-  <div class="mc-item">
-    <div class="mc-item-num">03</div>
-    <div class="mc-item-title">No Contradictions</div>
-    <div class="mc-item-body">Penalises co-execution of mutually exclusive action keys in the plan.</div>
-    <span class="weight-tag">×25%</span>
-  </div>
-  <div class="mc-item">
-    <div class="mc-item-num">04</div>
-    <div class="mc-item-title">Correct Final State</div>
-    <div class="mc-item-body">F1 of execution plan vs ground-truth — the primary signal for GRPO.</div>
-    <span class="weight-tag">×35%</span>
-  </div>
-  <div class="mc-item">
-    <div class="mc-item-num">05</div>
-    <div class="mc-item-title">Plan Efficiency</div>
-    <div class="mc-item-body">Penalises bloated plans; rewards precision over inclusion-by-default.</div>
-    <span class="weight-tag">×10%</span>
-  </div>
-</div>
-"""
+def _weight_tag(key: str) -> str:
+    w = _weight_pct(key)
+    return f'<span class="weight-tag">×{w}%</span>' if w is not None else ""
 
 
-with gr.Blocks(
-    title="ConflictBench — Instruction Priority Resolver",
+def build_methodology_html() -> str:
+    """Rubric cards; weights are read from the verifier so they never go stale."""
+    cards = (
+        ("01", "Format Compliance", "format_compliance",
+         "Validates JSON structure with all required keys and sub-fields."),
+        ("02", "Conflict Identification", "conflict_identification",
+         "F1 score on detected conflict pairs plus resolution accuracy bonus."),
+        ("03", "No Contradictions", "no_contradictions",
+         "Penalises co-execution of mutually exclusive action keys in the plan."),
+        ("04", "Correct Final State", "correct_final_state",
+         "F1 of execution plan vs ground-truth — the primary signal for GRPO."),
+        ("05", "Plan Efficiency", "efficiency",
+         "Penalises bloated plans; rewards precision over inclusion-by-default."),
+    )
+    items = "".join(f"""
+  <div class="mc-item">
+    <div class="mc-item-num">{num}</div>
+    <div class="mc-item-title">{title}</div>
+    <div class="mc-item-body">{body}</div>
+    {_weight_tag(key)}
+  </div>""" for num, title, key, body in cards)
+    return f'<div class="methodology-card">{items}\n</div>'
+
+
+METHODOLOGY_HTML = build_methodology_html()
+
+
+# Gradio 6 moved theme/css from the Blocks constructor to launch().
+_STYLE_KWARGS = dict(
     theme=gr.themes.Base(
         primary_hue=gr.themes.colors.violet,
         neutral_hue=gr.themes.colors.slate,
         font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "sans-serif"],
     ),
     css=CUSTOM_CSS,
+)
+try:
+    _GRADIO_MAJOR = int(gr.__version__.split(".")[0])
+except Exception:
+    _GRADIO_MAJOR = 5
+_BLOCKS_STYLE = {} if _GRADIO_MAJOR >= 6 else _STYLE_KWARGS
+_LAUNCH_STYLE = _STYLE_KWARGS if _GRADIO_MAJOR >= 6 else {}
+
+with gr.Blocks(
+    title="ConflictBench — Instruction Priority Resolver",
+    **_BLOCKS_STYLE,
 ) as demo:
 
     scenario_state = gr.State(None)
@@ -903,6 +1051,12 @@ with gr.Blocks(
                 minimum=1, maximum=3, step=1, value=2,
                 label="Difficulty",
                 info="1 = Easy (2 conflicts) · 2 = Medium (4) · 3 = Hard (6)",
+            )
+
+            sample_cb = gr.Checkbox(
+                value=False,
+                label="Sample (temperature 0.7)",
+                info="Off = greedy decoding (deterministic, the default).",
             )
 
             gen_btn = gr.Button(
@@ -1013,10 +1167,11 @@ with gr.Blocks(
                     <div style="margin-bottom:20px;">
                       <h3 style="color:#c4b5fd;font-size:15px;font-weight:600;margin-bottom:8px;">Deterministic Scoring — No LLM Judge</h3>
                       <p style="color:#64748b;font-size:13px;line-height:1.7;">
-                        ConflictBench uses five independent, rule-based rubric functions scored against
-                        programmatically-generated ground truth. The composite reward gives GRPO a rich,
-                        non-gameable gradient signal. An agent cannot win by blindly following or blindly
-                        overriding every instruction.
+                        ConflictBench scores answers with three rule-based rubrics (correct final
+                        state, conflict identification, no contradictions) behind a format gate,
+                        against ground truth computed by a deterministic resolver. An audit found
+                        that the original reward could be gamed; the reward and the task were
+                        redesigned and the cheat strategies are now regression tests (see the README).
                       </p>
                     </div>
                     {METHODOLOGY_HTML}
@@ -1024,8 +1179,8 @@ with gr.Blocks(
                     <h3 style="color:#c4b5fd;font-size:15px;font-weight:600;margin-bottom:12px;">Why This Is Hard for LLMs</h3>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;color:#64748b;line-height:1.6;">
                       <div>• Conflicts are <em>implicit</em> — no instruction labels itself as conflicting</div>
-                      <div>• Authority hierarchy is <em>never stated</em> in the prompt; it must be inferred</div>
-                      <div>• Wrong early decisions <em>cascade</em> through the execution plan</div>
+                      <div>• By default the tier list is <em>not</em> shown: the model must rank people from their job titles and the notices in the document</div>
+                      <div>• Every conflict must be resolved consistently in the final execution plan</div>
                       <div>• Requires structured JSON output with <em>correct instruction IDs</em></div>
                     </div>
                     """)
@@ -1036,32 +1191,14 @@ with gr.Blocks(
                     <div style="margin-bottom:20px;">
                       <h3 style="color:#c4b5fd;font-size:15px;font-weight:600;margin-bottom:8px;">GRPO Training on Qwen2.5-3B-Instruct</h3>
                       <p style="color:#64748b;font-size:13px;line-height:1.7;">
-                        Demo run: 240 steps · 2 epochs · 120 scenarios · Kaggle T4 (4-bit QLoRA) · 5h 22m total.
-                        Best checkpoint: step 200 (eval_reward = 0.5003).
+                        Results are being re-measured. Earlier figures were removed because they could not
+                        be reproduced with the current verifier. Final numbers will be read from the
+                        evaluation outputs in <code>results/</code> once the re-evaluation is complete.
                       </p>
                     </div>
-                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px;">
-                      <div class="mc-item" style="text-align:center;">
-                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#10b981;">0.500</div>
-                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Best Eval Reward</div>
-                        <div style="font-size:11px;color:#475569;margin-top:3px;">checkpoint-200</div>
-                      </div>
-                      <div class="mc-item" style="text-align:center;">
-                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#06b6d4;">53%↓</div>
-                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Reward Std Reduction</div>
-                        <div style="font-size:11px;color:#475569;margin-top:3px;">0.239 → 0.111</div>
-                      </div>
-                      <div class="mc-item" style="text-align:center;">
-                        <div style="font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#f59e0b;">87%↓</div>
-                        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">Eval Loss Drop</div>
-                        <div style="font-size:11px;color:#475569;margin-top:3px;">0.033 → 0.004</div>
-                      </div>
-                    </div>
-                    <div style="background:rgba(16,185,129,0.05);border:1px solid rgba(16,185,129,0.15);border-radius:8px;padding:14px;font-size:12px;color:#6ee7b7;line-height:1.6;">
-                      ✅ Demo run complete. Model showed consistent improvement with reward plateau at ~0.50.
-                      Overfitting observed after step 200 (eval dropped to 0.461 at step 240), confirming
-                      checkpoint-200 as optimal. Production run with 600+ scenarios on A100 is planned to
-                      break through the 0.50 ceiling.
+                    <div style="background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:14px;font-size:12px;color:#fcd34d;line-height:1.6;">
+                      Not yet re-measured. Use the Model Arena tab to compare the base model and the
+                      fine-tuned adapter on a scenario yourself (greedy decoding by default).
                     </div>
                     """)
 
@@ -1079,13 +1216,13 @@ with gr.Blocks(
 
     base_btn.click(
         fn=run_base_model,
-        inputs=[scenario_state],
+        inputs=[scenario_state, sample_cb],
         outputs=[base_output, base_score],
     )
 
     trained_btn.click(
         fn=run_trained_model,
-        inputs=[scenario_state],
+        inputs=[scenario_state, sample_cb],
         outputs=[trained_output, trained_score],
     )
 
@@ -1100,10 +1237,5 @@ with gr.Blocks(
 # Entry point
 # ---------------------------------------------------------------------------
 
-try:
-    load_models()
-except Exception as e:
-    print(f"Model loading deferred (will retry at inference time): {e}")
-
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_name="0.0.0.0", server_port=7860, **_LAUNCH_STYLE)

@@ -1,0 +1,49 @@
+{
+  "run_name": "gt_one_conflict_flipped__gen_n600_seed1234_20eb83f9",
+  "backend": "strategy",
+  "strategy": "gt_one_conflict_flipped",
+  "model": null,
+  "adapter": null,
+  "samples": 1,
+  "greedy": true,
+  "temperature": 0.0,
+  "strategy_seed": 0,
+  "data_path": "results/data/gen_n600_seed1234_20eb83f9.jsonl",
+  "data_sha256": "20eb83f9b6bfad9ecfd38bb9b2078339cdaa139f659161bccbbb4b04a19ac145",
+  "n_scenarios_in_data": 600,
+  "git_commit": "88fe3c3aa26dc629dc599ea51695e2ae3887f9fa",
+  "git_dirty": false,
+  "timestamp_utc": "2026-10-31T18:50:03+00:00",
+  "n": 600,
+  "n_completions": 600,
+  "skipped_too_long": 0,
+  "composite": {
+    "mean": 0.8051026666666666,
+    "ci95_low": 0.797934,
+    "ci95_high": 0.8118283333333333,
+    "n_resamples": 1000,
+    "ci_seed": 0
+  },
+  "per_difficulty": {
+    "1": {
+      "mean": 0.6918405,
+      "n": 200
+    },
+    "2": {
+      "mean": 0.8361244999999999,
+      "n": 200
+    },
+    "3": {
+      "mean": 0.887343,
+      "n": 200
+    }
+  },
+  "per_rubric": {
+    "correct_final_state": 0.770594,
+    "no_contradictions": 1.0,
+    "conflict_identification": 0.6944333333333333,
+    "efficiency": 0.7366441666666668,
+    "format_compliance": 1.0
+  },
+  "parse_failure_rate": 0.0
+}

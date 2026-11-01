@@ -1,25 +1,58 @@
 import gradio as gr
+import ast
+import hmac
 import threading
 import time
 import queue
 import os
+from pathlib import Path
 
 LOG_QUEUE = queue.Queue()
-TRAINING_ACTIVE = False
+TRAINING_LOCK = threading.Lock()
 PLOT_PATHS = []
+
+# Training costs real GPU money, so the button only works with this secret.
+# Set it in the Space settings (Settings → Variables and secrets → TRAIN_PASSWORD).
+TRAIN_PASSWORD = os.getenv("TRAIN_PASSWORD")
+
+
+def read_train_config() -> dict:
+    """Read the top-level constants of train_script.py without importing it (importing loads unsloth)."""
+    tree = ast.parse((Path(__file__).parent / "train_script.py").read_text(encoding="utf-8"))
+    config = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            try:
+                config[node.targets[0].id] = ast.literal_eval(node.value)
+            except ValueError:
+                pass
+    return config
+
+
+CFG = read_train_config()
+
+
+def _mix(weights: dict) -> str:
+    return " / ".join(f"{int(w * 100)}% Diff-{d}" for d, w in weights.items())
+
 
 def log_callback(msg):
     LOG_QUEUE.put(f"[{time.strftime('%H:%M:%S')}] {msg}")
 
-def start_training():
-    global TRAINING_ACTIVE, PLOT_PATHS
-    if TRAINING_ACTIVE:
+def start_training(password):
+    global PLOT_PATHS
+    if not TRAIN_PASSWORD:
+        yield "🔒 Training is disabled: TRAIN_PASSWORD is not set for this Space.", *[None]*4
+        return
+    if not hmac.compare_digest((password or "").encode(), TRAIN_PASSWORD.encode()):
+        yield "🔒 Wrong password. Training not started.", *[None]*4
+        return
+    if not TRAINING_LOCK.acquire(blocking=False):
         yield "⚠️ Training already running...", *[None]*4
         return
-        
-    TRAINING_ACTIVE = True
+
     PLOT_PATHS.clear()
-    
+
     def run():
         try:
             from train_script import run_training
@@ -31,8 +64,7 @@ def start_training():
             import traceback
             log_callback(traceback.format_exc())
         finally:
-            global TRAINING_ACTIVE
-            TRAINING_ACTIVE = False
+            TRAINING_LOCK.release()
             LOG_QUEUE.put("<<FINISHED>>")
 
     thread = threading.Thread(target=run, daemon=True)
@@ -78,21 +110,33 @@ with gr.Blocks(title="ConflictBench GRPO Trainer (A100)") as demo:
     with gr.Row():
         with gr.Column(scale=1):
             gr.Markdown("### ⚙️ Run 2 Configuration")
+            # Values are read from train_script.py so this table can't drift from the real config.
+            # Batch and LoRA rank are set inline in run_training(), not as constants.
             gr.Markdown(f"""
             | Parameter | Value |
             |-----------|-------|
-            | Model | Qwen2.5-3B-Instruct |
-            | Scenarios | 600 train / 30 eval |
-            | Curriculum | 60% Diff-1 / 40% Diff-2 |
-            | Global Batch | 8 (1 * 8 accum) |
-            | Generations | 8 |
-            | Max Output | 768 tokens |
+            | Model | Qwen2.5-3B-Instruct (4-bit) |
+            | Scenarios | {CFG.get('TRAIN_SCENARIOS')} train / {CFG.get('EVAL_SCENARIOS')} eval |
+            | Curriculum | {_mix(CFG.get('DIFFICULTY_TRAIN_WEIGHTS', {}))} |
+            | Generations | {CFG.get('NUM_GENERATIONS')} |
+            | Max Output | {CFG.get('MAX_NEW_TOKENS')} tokens |
             | LoRA rank | 16 |
-            | Epochs | 3 |
-            | β (KL) | 0.04 |
-            | LR | 3e-6 |
+            | Epochs | {CFG.get('NUM_EPOCHS')} |
+            | β (KL) | {CFG.get('BETA')} |
+            | LR | {CFG.get('LEARNING_RATE')} |
             """)
-            start_btn = gr.Button("🚀 Start Training", variant="primary", size="lg")
+            password_box = gr.Textbox(
+                label="Training password",
+                type="password",
+                placeholder="Required: training uses paid GPU time",
+                interactive=bool(TRAIN_PASSWORD),
+            )
+            start_btn = gr.Button(
+                "🚀 Start Training" if TRAIN_PASSWORD else "🔒 Training disabled (no TRAIN_PASSWORD set)",
+                variant="primary",
+                size="lg",
+                interactive=bool(TRAIN_PASSWORD),
+            )
             
         with gr.Column(scale=2):
             gr.Markdown("### 📋 Live Training Logs")
@@ -110,7 +154,8 @@ with gr.Blocks(title="ConflictBench GRPO Trainer (A100)") as demo:
 
     # Start training and stream outputs to logs and plots
     start_btn.click(
-        fn=start_training, 
+        fn=start_training,
+        inputs=[password_box],
         outputs=[log_box, plot1, plot2, plot3, plot4]
     )
 

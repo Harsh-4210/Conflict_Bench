@@ -1,0 +1,49 @@
+{
+  "run_name": "keyword_restrictive_v2__test_v1",
+  "backend": "strategy",
+  "strategy": "keyword_restrictive_v2",
+  "model": null,
+  "adapter": null,
+  "samples": 1,
+  "greedy": true,
+  "temperature": 0.0,
+  "strategy_seed": 0,
+  "data_path": "data/test_v1.jsonl",
+  "data_sha256": "e17169bb9de6bfb760ff23e0551ec170396ce11bd39e8db3ef50090497217b9a",
+  "n_scenarios_in_data": 600,
+  "git_commit": "aa2a707fd7c71323ea40fa1d711c8df34af914b3",
+  "git_dirty": false,
+  "timestamp_utc": "2026-10-31T19:18:35+00:00",
+  "n": 600,
+  "n_completions": 600,
+  "skipped_too_long": 0,
+  "composite": {
+    "mean": 0.6685326666666667,
+    "ci95_low": 0.6569073333333334,
+    "ci95_high": 0.680176,
+    "n_resamples": 1000,
+    "ci_seed": 0
+  },
+  "per_difficulty": {
+    "1": {
+      "mean": 0.675912,
+      "n": 200
+    },
+    "2": {
+      "mean": 0.658922,
+      "n": 200
+    },
+    "3": {
+      "mean": 0.670764,
+      "n": 200
+    }
+  },
+  "per_rubric": {
+    "correct_final_state": 0.6337103333333334,
+    "no_contradictions": 1.0,
+    "conflict_identification": 0.4445356666666667,
+    "efficiency": 0.6815450000000001,
+    "format_compliance": 1.0
+  },
+  "parse_failure_rate": 0.0
+}

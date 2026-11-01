@@ -1,0 +1,44 @@
+# Free Kaggle / Colab T4 (16 GB, fp16 only, no bf16). Qwen2.5-3B in 4-bit + LoRA.
+# ~100 optimiser steps. Run:  python -m training.train_grpo --config configs/grpo_t4.yaml
+# The prompt budget is in TOKENS of the full chat-templated prompt. Check it first (no GPU needed):
+#   python -m training.train_grpo --config configs/grpo_t4.yaml --dry-run
+run_name: grpo_t4
+output_dir: conflictbench-grpo-output/grpo_t4
+results_dir: results
+seed: 42
+
+model: unsloth/Qwen2.5-3B-Instruct-bnb-4bit
+max_seq_length: 2688
+load_in_4bit: true
+lora_r: 16
+lora_alpha: 16
+lora_dropout: 0.0
+lora_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+train_size: 200            # scenarios from the TRAIN split
+val_size: 20               # scenarios from the VAL split (in-training eval; the test split is never used here)
+train_difficulty_mix: {1: 0.6, 2: 0.4}
+val_difficulty_mix: {1: 0.5, 2: 0.5}
+# Phase 3 prompts: about 1350 tokens (level 1) and 1700 (level 2) at the 95th percentile.
+max_prompt_tokens: 2048
+max_completion_tokens: 640     # 2048 + 640 = 2688 = max_seq_length
+
+learning_rate: 5.0e-6
+warmup_steps: 10
+lr_scheduler_type: cosine
+weight_decay: 0.01
+beta: 0.04
+num_generations: 4
+per_device_train_batch_size: 4       # = num_generations (Unsloth GRPO wants a full group per device batch)
+gradient_accumulation_steps: 2       # -> 2 prompts x 4 completions per optimiser step
+temperature: 0.85
+top_p: 0.92
+epochs: 1.0
+max_steps: -1
+
+logging_steps: 5
+eval_steps: 25
+save_steps: 25
+save_total_limit: 3
+report_to: none
+hub_repo: null

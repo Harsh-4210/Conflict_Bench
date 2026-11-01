@@ -1,0 +1,49 @@
+{
+  "run_name": "random_half__test_v1",
+  "backend": "strategy",
+  "strategy": "random_half",
+  "model": null,
+  "adapter": null,
+  "samples": 1,
+  "greedy": true,
+  "temperature": 0.0,
+  "strategy_seed": 0,
+  "data_path": "data/test_v1.jsonl",
+  "data_sha256": "e17169bb9de6bfb760ff23e0551ec170396ce11bd39e8db3ef50090497217b9a",
+  "n_scenarios_in_data": 600,
+  "git_commit": "aa2a707fd7c71323ea40fa1d711c8df34af914b3",
+  "git_dirty": false,
+  "timestamp_utc": "2026-10-31T19:18:33+00:00",
+  "n": 600,
+  "n_completions": 600,
+  "skipped_too_long": 0,
+  "composite": {
+    "mean": 0.20663733333333334,
+    "ci95_low": 0.20276083333333333,
+    "ci95_high": 0.21066016666666668,
+    "n_resamples": 1000,
+    "ci_seed": 0
+  },
+  "per_difficulty": {
+    "1": {
+      "mean": 0.1999305,
+      "n": 200
+    },
+    "2": {
+      "mean": 0.20662299999999997,
+      "n": 200
+    },
+    "3": {
+      "mean": 0.2133585,
+      "n": 200
+    }
+  },
+  "per_rubric": {
+    "correct_final_state": 0.45919566666666667,
+    "no_contradictions": 0.0,
+    "conflict_identification": 0.0,
+    "efficiency": 0.40813066666666664,
+    "format_compliance": 1.0
+  },
+  "parse_failure_rate": 0.0
+}

@@ -3,21 +3,31 @@ spec_version: 1
 name: ConflictBench
 type: reinforcement_learning
 description: >
-  An RL environment for training language models to resolve contradictory
-  business instructions using a six-tier authority hierarchy. Reward is fully
-  deterministic (5 rubric functions, no LLM judge). Trained via GRPO on
-  Qwen2.5-3B-Instruct with Unsloth + TRL.
+  An RL environment for training language models to resolve conflicting
+  business instructions by authority. By default the prompt shows senders'
+  names and job titles, not the tier list; standing rules, delegations, dates,
+  conditions and chains also decide who wins. The reward is deterministic
+  (three weighted rubrics plus a format gate, no LLM judge). Includes a GRPO
+  training pipeline (Unsloth + TRL) for Qwen2.5 models. No trained-model
+  result on the current task has been measured yet.
 
 runtime: python-3.10
 
-# HF Spaces entry point (Gradio dashboard + training UI)
-entry_point: hf_space_a100/app.py
+# HF Spaces entry point (Gradio demo)
+entry_point: app.py
 
-# HF Spaces / Colab training script
-training_entry: hf_space_a100/train.py
+# Training pipeline (python -m training.train_grpo --config configs/<name>.yaml)
+training_entry: training/train_grpo.py
+training_configs:
+  - configs/grpo_smoke.yaml
+  - configs/grpo_t4.yaml
+  - configs/grpo_a10g.yaml
 
-# Root training script (local / Kaggle / research — full configurability)
+# Deprecated shim that forwards to training/train_grpo.py
 local_training_entry: train_grpo.py
+
+# OpenEnv HTTP / WebSocket server (python -m server.app --port 8000)
+server_entry: server/app.py
 
 framework:
   - Unsloth
@@ -30,57 +40,53 @@ environment:
   class: ConflictBenchEnv
   file: conflict_bench.py
   observation: text          # formatted instruction document
-  action: text               # structured JSON resolution plan
+  action: text               # JSON resolution plan
   reward_range: [0.0, 1.0]
   reward_type: deterministic
-  episode_length: 1          # single-turn resolution
+  episode_length: 1          # single step: one prompt, one answer
+  difficulty_levels: [1, 2, 3, 4, 5]
+  splits: [train, val, test]
+  test_set: data/test_v1.jsonl
 
+# Weights must equal verifier.RUBRIC_WEIGHTS (checked by tests/test_docs.py).
 reward_rubrics:
   - name: correct_final_state
-    weight: 0.35
-    type: f1_score
+    weight: 0.45
+    type: f1_followed_and_overridden
+  - name: conflict_identification
+    weight: 0.30
+    type: pair_f1_times_resolution_accuracy
   - name: no_contradictions
     weight: 0.25
-    type: binary_check
-  - name: conflict_identification
-    weight: 0.20
-    type: f1_score
-  - name: efficiency
-    weight: 0.10
-    type: penalty
-  - name: format_compliance
-    weight: 0.10
-    type: schema_validation
+    type: per_conflict_consistency
+reward_format_gate:
+  no_answer_found: 0.0
+  schema_errors: 0.9
+  clean: 1.0
+reward_spec: docs/REWARD_DESIGN.md
 
+# Values from configs/*.yaml (checked by tests/test_docs.py).
 training:
-  model: unsloth/Qwen2.5-3B-Instruct-bnb-4bit
   method: GRPO
-  lora_rank: 32
-  lora_alpha: 32
-  train_scenarios: 400
-  eval_scenarios: 60
-  epochs: 2
-  learning_rate: 3.0e-6
-  beta_kl: 0.04
-  num_generations: 4
-  max_completion_tokens: 768
-  max_prompt_tokens: 3200
-  hardware:
-    - A100-48GB  # ~8h
-    - L4-24GB    # ~14h
-    - A10G-24GB  # ~12h
-    - T4-16GB    # ~28h (2 Kaggle sessions)
+  configs:
+    grpo_smoke:
+      model: unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit
+      lora_rank: 8
+      lora_alpha: 8
+    grpo_t4:
+      model: unsloth/Qwen2.5-3B-Instruct-bnb-4bit
+      lora_rank: 16
+      lora_alpha: 16
+    grpo_a10g:
+      model: unsloth/Qwen2.5-3B-Instruct-bnb-4bit
+      lora_rank: 16
+      lora_alpha: 16
 
-results:
-  baseline_reward: 0.14
-  best_reward: 0.50
-  final_reward: 0.48
-  improvement_pct: 257
-  best_checkpoint: checkpoint-250
+# Measured numbers live in results/ (see results/leaderboard.md); none are copied here.
 
 links:
   hf_space: https://huggingface.co/spaces/Harsh-9209/Conflict_Bench
-  hf_model: https://huggingface.co/Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora
+  hf_model_hackathon_adapter: https://huggingface.co/Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora  # trained on the old task; not re-scored
   github: https://github.com/Harsh-4210/Conflict_Bench
   blog: ./blog.md
 
@@ -88,6 +94,6 @@ metadata:
   version: 2.0.0
   author: Harsh Jain
   competition: OpenEnv Hackathon India 2026
-  theme: Long-Horizon Instruction Following
+  theme: Long-Horizon Instruction Following  # the hackathon theme it was submitted under; episodes are single-step
   sub_theme: AI Scaling (Scale AI Bonus)
   license: MIT

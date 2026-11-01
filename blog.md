@@ -1,131 +1,118 @@
 # Teaching AI to Navigate the Chain of Command
 
-### How ConflictBench uses reinforcement learning to train language models on the skill every enterprise employee learns on day one — and no AI has ever been explicitly taught.
+### How ConflictBench uses reinforcement learning to train language models to resolve conflicting instructions by authority, and what an audit of its first version found.
 
 ---
 
-There is a skill every new employee learns within their first week at any organisation, and it is never written in any onboarding document.
+> **Update — November 2026.** This post was first written for the OpenEnv Hackathon in April 2026. An audit of the code in October 2026 found that the original reward could be gamed and the original task could be solved without any learning. On the original task and scorer, an empty answer scored 0.340, a keyword rule that ignores who sent each instruction scored 0.951, and a short lookup script scored 1.000 (`results/baselines.json`). The training results this post used to report came from a script that is not in the repository and cannot be reproduced, so they have been removed. The reward and the task have since been redesigned and tested; no model has been trained or evaluated on the new version yet. The sections below are corrected to match the code. The full story, with a before/after table of the cheat strategies, is in the [README](./README.md#what-we-found-and-fixed).
 
-When your manager asks you to do something that contradicts what Legal said last week, you do not flip a coin. You do not try to do both. You do not ask your manager which one they meant. You know — through a mix of common sense, organisational instinct, and quiet survival — that Legal wins. You complete the task in a way that satisfies the compliance constraint, then you let your manager know and explain why.
+---
 
-This is authority-aware instruction resolution. Humans develop it through experience. It is one of the most fundamental soft skills in professional life.
+There is a skill every new employee learns within their first week at any organisation, and it is rarely written in any onboarding document.
 
-No language model has ever been explicitly trained to do it.
+When your manager asks you to do something that contradicts what Legal said last week, you do not flip a coin. You do not try to do both. You know, through a mix of common sense and organisational instinct, that Legal wins. You complete the task in a way that satisfies the compliance constraint, then you tell your manager and explain why.
+
+This is authority-aware instruction resolution. Humans develop it through experience. Researchers have started to study it for language models too: OpenAI's 2024 *Instruction Hierarchy* work trains models to rank system, user and tool instructions, and benchmarks such as IHEval measure it. ConflictBench looks at a different setting: many human stakeholders in a business, with rules that go beyond a single ranking.
 
 ---
 
 ## The Problem That Lives in Every Organisation
 
-Walk into any enterprise using AI assistants today and ask them about instruction conflicts. They will describe the problem carefully: the AI sometimes follows the wrong instruction. Sometimes it tries to do both and produces a contradictory plan. Sometimes it freezes and refuses to act. In the worst cases — the ones nobody talks about publicly — it executes the lower-authority instruction with full confidence, because that instruction happened to be more recent, more emphatic, or simply longer.
+AI assistants inside companies receive instructions from many people. Sometimes the assistant follows the wrong one. Sometimes it tries to do both and produces a contradictory plan. Sometimes it follows the lower-authority instruction because it was more recent, more emphatic, or simply longer.
 
-The reason this happens is structural. Current language models are trained on human-written text that describes how decisions are made, but they are not trained with a reward signal that penalises authority misjudgements. They have read millions of documents about organisational hierarchies, but they have never experienced the consequence of getting the hierarchy wrong.
-
-This is the gap ConflictBench is designed to close.
+Language models have read a great deal of text about how organisations make decisions, but they are rarely trained with a reward that penalises getting the authority wrong. That is the gap ConflictBench is meant to help with.
 
 ---
 
 ## What We Built
 
-ConflictBench is a reinforcement learning environment — specifically, an OpenEnv-compatible training environment — that presents a language model with realistic business instruction documents and rewards it for correctly resolving the authority conflicts embedded within them.
+ConflictBench is an OpenEnv-compatible reinforcement learning environment. It presents a language model with a generated business instruction document and rewards it for resolving the conflicts inside it.
 
-Each training episode works like this:
+Each episode works like this. *(Corrected November 2026: the original post described 8 to 28 instructions, a different six-tier list, and a prompt that did not show the hierarchy. None of that matched the code.)*
 
-The model receives a document containing between 8 and 28 instructions from multiple organisational sources. The sources span six tiers of authority: Legal and Compliance at the top, then C-Suite, then VP and Senior Director, then Director and Manager, then Team Lead, then Individual Contributor. Several pairs of instructions within the document directly contradict each other. The model is not told which pairs conflict. It is not told the authority hierarchy. It must infer both from the structure of the document and the labels on each instruction.
+- The model receives a document of instructions from named people. In the fixed test set, a level-1 scenario has 9 to 15 instructions, level 2 has 16 to 24 and level 3 has 25 to 37 (counted from `data/test_v1.jsonl`); levels 4 and 5 are larger still.
+- Authority runs over 18 offices on six tiers: legal and regulatory roles at the top, then the C-suite, vice presidents, directors, managers, and finally team leads and coordinators.
+- **How much of the hierarchy is shown depends on the mode.** In the default mode the prompt states the general rule in words (legal outranks everyone, then C-suite, VPs, directors, managers, team leads), and each instruction shows only the sender's name and job title, such as "Senior Finance Director". The model has to map each title to its level. In the optional printed mode, and in the original hackathon task, the numbered tier list is printed in the prompt.
+- Seniority is not the only rule. Standing notices can give one person the final say on one topic, a senior person can delegate their authority on a topic, the later date wins between equals, some instructions only apply if a stated condition holds, and some depend on another instruction going ahead.
+- Not every pair on the same topic is a conflict: instructions that agree, or that cover different departments or systems, do not clash.
 
-The model must produce a structured JSON execution plan that: identifies every conflicting pair, states which instruction wins and why, and lists what should be executed and what should be overridden.
+The model must produce a JSON plan that lists every real conflict with its winner, and splits all instructions into an execution plan and an overridden list.
 
-The reward function evaluates this plan against programmatically-generated ground truth across five deterministic rubrics. No language model judge. No human scorer. The verifier checks the output against the exact correct answer that was injected at generation time.
-
----
-
-## Why GRPO, and Why It Works Here
-
-Group Relative Policy Optimisation — the same training method behind DeepSeek-R1's reasoning improvements — is particularly well-suited to this problem for a reason that is easy to overlook.
-
-GRPO works by generating multiple completions for the same prompt, scoring each, and updating the policy based on which completions scored above or below the group mean. This means the model is always being compared to itself — not to a fixed target, not to a human preference label, but to the distribution of its own outputs on a given problem.
-
-This is exactly right for authority resolution. The model does not need to know what the correct answer looks like. It needs to learn to generate better answers than its own average. The reward function provides the signal that defines "better," and because the reward is fully deterministic and rule-based, the gradient is clean — there is no ambiguity about whether a completion deserved its score.
-
-We used Unsloth's optimised GRPO implementation with TRL's GRPOTrainer, applied to Qwen2.5-3B-Instruct with 4-bit quantisation and LoRA (rank 32, targeting all attention and MLP projections). The full training run on an A100 48GB GPU takes approximately 8 hours for 400 scenarios across 2 epochs.
+The scorer checks this plan against the correct answer, which a deterministic resolver derives from the scenario's structured data. No language model judge and no human scorer.
 
 ---
 
-## The Reward Function: Designed to Be Ungameable
+## Why GRPO
 
-The five rubrics are worth describing in detail, because the design choices matter.
+Group Relative Policy Optimisation, the method used for DeepSeek-R1's reasoning training, generates several completions for the same prompt, scores each one, and pushes the policy toward the completions that scored above the group's mean. The model is compared with its own outputs on the same problem, not with a labelled example.
 
-**Correct Final State (35%)** measures F1 between the model's execution plan and the ground truth followed/overridden sets. This is the primary signal. An output that correctly identifies which instructions should execute and which should be blocked scores well here, regardless of how it explains its reasoning.
+That suits this task: there is no need for human-written answers, only a reward that reliably says which of two answers is better. Because the reward here is rule-based, it gives the same score to the same answer every time.
 
-**No Contradictions (25%)** checks whether the output plan contains two instructions that cannot coexist. An agent that tries to satisfy both sides of a conflict — "follow the hiring freeze AND hire the four engineers" — receives zero on this rubric regardless of how detailed its reasoning appears.
-
-**Conflict Identification (20%)** measures F1 of identified conflict pairs multiplied by resolution direction accuracy. This rewards the model for explicitly naming the conflicts, not just producing an output that happens to be correct. It builds the skill of structured conflict reasoning, not just lucky resolution.
-
-**Efficiency (10%)** penalises unnecessary instructions in the execution plan. A model that includes every instruction regardless of relevance — a common padding strategy — scores poorly here.
-
-**Format Compliance (10%)** verifies valid JSON with the required schema. This is a minimum bar, but it matters: an output that cannot be parsed contributes nothing to a downstream system.
-
-Three common reward-gaming strategies all fail against this rubric set. Always follow all instructions: the Contradictions rubric catches this. Always override everything: the Final State rubric catches this (many instructions should be followed). Produce well-formatted JSON with plausible-sounding reasoning: the Conflict Identification F1 catches this — the IDs are verified against the actual conflict pairs.
+The training pipeline uses Unsloth with TRL's `GRPOTrainer` on Qwen2.5 models with LoRA. *(Corrected November 2026: the original post described a rank-32 LoRA and an 8-hour A100 run. The current configs use rank 8 for a 0.5B smoke test and rank 16 for Qwen2.5-3B on a T4 or an A10G/L4, and none of them has been run yet. See [`docs/TRAINING_GUIDE.md`](./docs/TRAINING_GUIDE.md).)*
 
 ---
 
-## What the Training Curves Show
+## The Reward Function, and How It Was Gamed
 
-The results from Run 2 — 400 training scenarios, 2 epochs, A100 48GB — are instructive.
+The original reward had five rubrics: correct final state (35%), no contradictions (25%), conflict identification (20%), efficiency (10%) and format (10%). The original post argued that it could not be gamed. That was wrong:
 
-The baseline Qwen2.5-3B-Instruct achieves a composite reward of 0.14 on this task with no training. This is low, but not zero: the model can produce valid JSON and occasionally resolves conflicts correctly by chance.
+- An answer with **empty lists** scored 0.340, because "no contradictions" gave full marks to an empty plan and the format rubric paid for any JSON with the right keys.
+- Putting **every instruction** in the plan scored 0.429.
+- A keyword rule that always picks the strict-sounding side ("freeze", "block"), **without looking at who sent it**, scored 0.951, because the strict side won almost every conflict in the original generator.
+- A short script that matched templates and looked up the printed tier scored 1.000.
 
-After GRPO training, reward climbs to a peak of 0.50 around step 250 — a 257% improvement over baseline. The model has learned, from the reward signal alone and without any labelled examples, to apply a consistent authority hierarchy across documents it has never seen.
+(All four numbers: `results/baselines.json`.)
 
-Several things about the training dynamics are worth noting.
+The current reward, in [`verifier.py`](./verifier.py) and [`docs/REWARD_DESIGN.md`](./docs/REWARD_DESIGN.md), has three weighted rubrics and a format gate:
 
-The reasoning length stays stable throughout training at approximately 300 tokens per completion. This tells us the model is not reward-hacking via length — it is not generating empty outputs to avoid contradictions, and it is not padding with irrelevant text to appear thorough. The reward improvement reflects genuine task learning.
+- **Correct final state (45%)**: the average of the F1 of the execution plan and the F1 of the overridden list against the correct sets, with penalties for made-up IDs and for putting an ID in both lists.
+- **Conflict identification (30%)**: the F1 of the conflict pairs found, multiplied by the share of them resolved in the right direction.
+- **No contradictions (25%)**: on each real conflict, credit only if exactly one side is in the plan and the model named that side as the winner. An empty plan scores zero.
+- **Format gate**: no parseable answer means a score of 0; type errors multiply the score by 0.9.
 
-The reward curve is volatile, as is typical for GRPO on complex structured reasoning tasks. Each step sees only a small batch of generated completions, and the reward landscape for this task has many local features. The upward trend is real but noisy.
+Efficiency was dropped from the score because it measured the same thing as the plan F1 a second time. On the original task, the new reward cut the empty answer to 0.000 and "follow everything" to 0.177 (`results/baselines_v2.json`). The keyword rule and the lookup script still scored 0.921 and 1.000 there, because on that task they really were giving the right answers. That is why the task itself had to change.
 
-The KL divergence from the base policy rises steadily throughout training, which is expected given our low β (0.02 in early runs, corrected to 0.04 in later runs). The model is moving meaningfully away from the base distribution — which is the intended behaviour when learning a genuinely new capability.
+On the redesigned task's held-out test set, the old keyword rule and the old lookup script both score 0.189, and the best shortcut measured, a seniority lookup that is handed the hidden topic and scope fields for free, scores 0.808 (`results/leaderboard.md`). A test fails if any of these shortcuts climbs above its limit.
+
+---
+
+## What the Training Runs Showed
+
+*(Replaced November 2026.)* The original post reported reward curves, a baseline, a peak and a relative improvement for two hackathon training runs. Those numbers came from a training script that is not in this repository, on the old, gameable task, and some of the per-rubric figures are impossible under the scorer of the time. They are kept only as an archive in [`docs/TRAINING_LOGS.md`](./docs/TRAINING_LOGS.md), marked unverified.
+
+Nothing has been trained on the new task yet, and the hackathon adapter has not been re-scored. The commands to measure the base model, the old adapter and any API model on the fixed test set are in [`results/README.md`](./results/README.md). Whatever those runs show will be reported next to the rule-based baselines.
 
 ---
 
 ## The Connection to AI Scaling
 
-This project was built under the Scale AI sub-theme of the OpenEnv Hackathon, and the connection is not superficial.
+This project was built under the Scale AI sub-theme of the OpenEnv Hackathon.
 
-The core hypothesis of AI scaling is that larger models, trained on more data with better objectives, develop more generalised capabilities. This has been demonstrated across many dimensions: reasoning, coding, multilingual understanding, factual knowledge. But one capability has been conspicuously absent from the scaling story: the ability to operate correctly under authority constraints in multi-stakeholder environments.
+As language models take on more autonomous work in organisations, they will meet more instructions that cannot all be obeyed. Handling those correctly is a reliability and safety question, not only a capability question.
 
-This is not because the problem is hard. It is because there has been no training signal for it.
-
-ConflictBench provides that signal. And because the reward function is fully deterministic and the environment is infinitely generatable — each episode is a fresh scenario with new parameters, new instruction content, and new conflict pairs — the environment can scale to any amount of training data without human labelling cost.
-
-This is the pattern that produced the breakthroughs in mathematical reasoning: not more supervised examples, but better reward functions applied to generated problems. ConflictBench applies the same pattern to a different class of capability — one that is arguably more important for real-world deployment than the ability to solve competition mathematics.
+ConflictBench offers one kind of training signal for it. Because the scorer is rule-based and every scenario is generated, the environment can produce as many fresh training scenarios as needed without human labelling. The audit is also a reminder of the limits of that approach: a generated task and a hand-written reward can both contain shortcuts, and the only way to find them is to try to cheat on purpose and measure the result.
 
 ---
 
 ## Where This Goes Next
 
-The current implementation trains on single-domain business scenarios with a fixed six-tier hierarchy. Several natural extensions suggest themselves.
+Some extensions the original post proposed now exist in a first form: **topic-specific authority** (standing rules and delegations) and **multi-step dependencies** (conditional and contingent instructions). Others are still open:
 
-**Cross-domain generalisation.** The authority hierarchy in healthcare (attending physician > specialist > resident > nurse) is different from the hierarchy in a law firm (partner > senior associate > junior associate > paralegal) but the underlying structure is the same. A model trained on one domain should be able to transfer to others if the reward signal is consistent.
-
-**Dynamic hierarchy learning.** In real organisations, authority is not always fixed. A VP's directive outranks a Manager's except in that manager's domain of specific expertise. Training on scenarios with contextual authority — where the hierarchy shifts based on subject matter — would produce more robust models.
-
-**Multi-agent conflict resolution.** The current environment has a single model resolving conflicts. An extension with multiple models negotiating authority claims in a shared workspace would address a different but related problem: what happens when two AI agents receive conflicting instructions from their respective principals?
-
-**Adversarial instruction injection.** Training on scenarios where some instructions are specifically designed to appear higher-authority than they are — instruction injection attacks — would directly address an emerging security concern in enterprise AI deployment.
+- **Measuring models.** Score the base model, the hackathon adapter and a newly trained model on the held-out test set.
+- **Multi-turn episodes.** Instructions that arrive over several turns, with tool calls and a simulated company state. That would make the environment long-horizon; today each episode is a single step.
+- **Spoofed authority.** Instructions that claim to come from Legal but do not, so the model must check the real sender.
+- **Configurable organisation charts.** Other hierarchies, such as a hospital or a law firm, loaded from a file.
 
 ---
 
 ## The Honest Assessment
 
-A composite reward of 0.50 after 2 epochs on 400 scenarios is a promising result, not a solved problem. The model resolves conflicts correctly more often than chance, and significantly better than the untrrained baseline, but it does not yet perform at the level required for autonomous deployment in a real enterprise context.
-
-What this work demonstrates is that the capability is learnable from a reward signal. That is the important result. The path from 0.50 to 0.80 is a matter of scale — more scenarios, more epochs, larger models, harder difficulty levels. The reward function is already in place. The environment is already generating valid training data. The infrastructure works.
-
-The first step in teaching any capability is proving it can be taught. ConflictBench does that.
+*(Rewritten November 2026.)* The first version of ConflictBench did not show that the capability can be learned. Its reward paid for doing nothing, its task could be solved with a lookup, and its training numbers cannot be reproduced. What the project has now is a scorer whose known cheats score near zero, a task on which every rule-based shortcut tested falls well short of a perfect score, a fixed held-out test set, and one training pipeline with configs ready to run. The next step is to run it and report what happens, whether or not training helps.
 
 ---
 
-*ConflictBench was built for the OpenEnv Hackathon India 2026. The codebase, trained model, and training infrastructure are open source.*
+*ConflictBench was built for the OpenEnv Hackathon India 2026. The code is open source under the MIT license.*
 
 *Codebase: [github.com/Harsh-4210/Conflict_Bench](https://github.com/Harsh-4210/Conflict_Bench)*
 *HF Space: [huggingface.co/spaces/Harsh-9209/Conflict_Bench](https://huggingface.co/spaces/Harsh-9209/Conflict_Bench)*
-*Trained model: [huggingface.co/Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora](https://huggingface.co/Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora)*
+*Hackathon adapter (old task, not re-scored): [huggingface.co/Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora](https://huggingface.co/Harsh-9209/conflictbench-qwen2.5-3b-grpo-lora)*

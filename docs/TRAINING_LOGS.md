@@ -1,12 +1,14 @@
 # ConflictBench: Historical Training Logs & Diagnostics
 
-This document is the canonical archive of all training runs, bug discoveries, fixes, diagnostic findings, and metric observations for the ConflictBench GRPO pipeline. It is intended to be a complete, reproducible record — not a highlights reel.
+> **Read this first (November 2026).** This file records the hackathon training runs of April 2026. The training script those runs used (with `detect_gpu_config()` and the L40S/A100 code paths) is **not in this repository**, and the runs used the old task and the old reward, which were later shown to be gameable (see the README, "What we found and fixed"). Every metric below therefore comes from code that is not here and cannot be reproduced; some per-rubric numbers are impossible under the repo's own scorer of that time (`FIX_BLUEPRINT.md`, C.2). The metric tables are kept, unchanged, under [Archive (unverified)](#archive-unverified) for the record only. Do not quote them. No training run has been done yet with the current pipeline (`training/train_grpo.py`); when one is, its logs go to `results/<run_name>/`.
+>
+> The bug history below is still useful: it lists real problems with Unsloth and TRL that the current pipeline was written to avoid. Notes in *italics* say how the current code handles each one.
 
 ---
 
-## Pipeline Bug History
+## Pipeline Bug History (old training script)
 
-Before the training runs, a sequence of critical bugs were discovered and resolved. These are documented here because they directly affected early run metrics and explain why naive reproduction of the setup will fail without the fixes.
+Before the training runs, a sequence of bugs was found and fixed in the old script. They are documented here because they explain why a naive setup of Unsloth + TRL GRPO can fail.
 
 ### Bug 1 — `dtype=None` → Unsloth LoRA Kernel Crash (Critical)
 
@@ -40,7 +42,9 @@ config["model_name"] = "unsloth/Qwen2.5-3B-Instruct-bnb-4bit"
 config["load_in_4bit"] = True
 ```
 
-**Recurrence:** This bug appeared three times across three separate attempts before the root cause was correctly identified. The fix is now enforced in `detect_gpu_config()`.
+**Recurrence:** This bug appeared three times across three separate attempts before the root cause was correctly identified. The old script enforced the fix in `detect_gpu_config()`.
+
+*Current code: there is no GPU auto-detection. Each YAML in `configs/` sets `load_in_4bit` itself: `true` for all three, including the 0.5B smoke config (not run yet), because of this bug.*
 
 ---
 
@@ -80,6 +84,8 @@ def _get_reward(entry):
             return entry[key]
     return None
 ```
+
+*Current code: the key names depend on the TRL version. `requirements-train.txt` pins TRL 1.13.0; `training/train_grpo.py` records that this version logs the mean reward as `reward` and `eval_reward`, and `training_space/train_script.py` plots those keys.*
 
 ---
 
@@ -124,15 +130,17 @@ commit_message=f"ConflictBench GRPO - {TRAIN_SCENARIOS} scenarios, {NUM_EPOCHS} 
 
 **Fix:** `metric_for_best_model="eval_rewards/mean"`
 
+*Current code: `metric_for_best_model = "eval_reward"`, the key the pinned TRL 1.13.0 uses (see the note under Bug 3). `save_steps` must be a multiple of `eval_steps` (checked when the config loads), so every checkpoint has a validation reward. Whether the best checkpoint is picked correctly has not been confirmed by a GPU run yet.*
+
 ---
 
-### Bug 7 — `β=0.02` Causes Uncontrolled KL Drift (Configuration)
+### Bug 7 — `β=0.02` Seen as Too Low (Configuration)
 
-**Symptom:** KL divergence rises monotonically throughout Run 2, reaching 0.0020 by step 500 — approximately 5× the starting value with no sign of stabilisation.
+**Observation (old script, Run 2):** the logged KL divergence kept rising through the run with β=0.02.
 
-**Root Cause:** β=0.02 is below the threshold required to anchor the policy near the base distribution for this task. The KL penalty is insufficient to counteract the reward gradient pulling the policy toward the high-reward but increasingly off-distribution region.
+**Change:** β was raised to 0.04 for later runs. There is no saved run in this repo showing what that change did.
 
-**Fix:** β increased to 0.04 for all subsequent runs. This was confirmed to stabilise KL while preserving the reward improvement gradient.
+*Current code: all three configs use `beta: 0.04`.*
 
 ---
 
@@ -155,9 +163,15 @@ def get_logs():
         return "\n".join(LOGS[-300:])
 ```
 
+*Current code: `training_space/app.py` passes log lines through a thread-safe `queue.Queue` and allows one training run at a time with a lock.*
+
 ---
 
-## Run 1: Warmup and Proof of Concept
+## Archive (unverified)
+
+Everything from here to the end of the file is the April 2026 record, kept as it was written apart from heading levels. It was produced by a training script that is not in this repository, on the old task and with the old reward (5 rubrics, weights 0.35 / 0.25 / 0.20 / 0.10 / 0.10, an empty answer worth 0.34). None of it can be reproduced from this repo; the "baseline" numbers were not produced by the evaluation harness that exists now; and the per-rubric tables report a mean "correct final state" (an F1) below a mean "efficiency" (a Jaccard overlap of the same answers), which that scorer cannot produce. The PNG charts in `assets/` come from the same runs and have the same status. Read it as a history of what was tried, not as results.
+
+### Run 1: Warmup and Proof of Concept
 
 **Objective:** Verify that the GRPO training loop functions end-to-end and that the deterministic verifier provides a learnable gradient signal.
 
@@ -168,7 +182,7 @@ def get_logs():
 **Quantisation:** 4-bit (forced; T4 has 16GB, 4-bit is required)  
 **Bugs present during this run:** Bugs 3, 5, 6 (reward plots empty; upload crashed; best checkpoint not saved)
 
-### Run 1 Step Log
+#### Run 1 Step Log
 
 | Step | Avg Reward | KL Divergence | Notes |
 |---|---|---|---|
@@ -182,7 +196,7 @@ def get_logs():
 | 110 | 0.22 | 0.000041 | Peak reward for Run 1. |
 | 120 | 0.22 | 0.000044 | Final step. Run ends due to Colab session limit. |
 
-### Run 1 Per-Rubric Breakdown (Final Step)
+#### Run 1 Per-Rubric Breakdown (Final Step)
 
 | Rubric | Baseline | Step 120 | Change |
 |---|---|---|---|
@@ -193,7 +207,7 @@ def get_logs():
 | R5: Format Compliance (×0.10) | 0.65 | 0.82 | +0.17 |
 | **Composite** | **0.14** | **0.22** | **+0.08** |
 
-### Run 1 Key Findings
+#### Run 1 Key Findings
 
 The GRPO training loop is functional. The verifier provides a learnable gradient — composite reward improved by 57% from baseline in 120 steps on a T4.
 
@@ -205,7 +219,7 @@ Reward was still climbing at step 120, indicating the run was terminated before 
 
 ---
 
-## Run 2: The Hardening (Production Run)
+### Run 2: The Hardening (Production Run)
 
 **Objective:** Push to convergence on a production-grade GPU. Measure the ceiling of what GRPO can achieve on this task at 3B scale.
 
@@ -216,7 +230,7 @@ Reward was still climbing at step 120, indicating the run was terminated before 
 **Bugs fixed before this run:** Bugs 1, 2, 4  
 **Bugs still present:** Bug 7 (β=0.02 too low — discovered during this run)  
 
-### Run 2 Step Log
+#### Run 2 Step Log
 
 | Step | Avg Reward | KL Divergence | Avg Reasoning Tokens | Policy Loss | Notes |
 |---|---|---|---|---|---|
@@ -241,7 +255,7 @@ Reward was still climbing at step 120, indicating the run was terminated before 
 | **475** | 0.34 | 0.0013 | ~303 | 0.065 | — |
 | **500** | 0.48 | 0.0020 | ~308 | 0.030 | Final step. KL at 5× starting value. |
 
-### Run 2 Per-Rubric Breakdown
+#### Run 2 Per-Rubric Breakdown
 
 | Rubric | Baseline | Step 250 (Peak) | Step 500 (Final) |
 |---|---|---|---|
@@ -252,7 +266,7 @@ Reward was still climbing at step 120, indicating the run was terminated before 
 | R5: Format Compliance (×0.10) | 0.65 | 0.88 | 0.89 |
 | **Composite** | **0.14** | **0.50** | **0.48** |
 
-### Run 2 Diagnostic Findings
+#### Run 2 Diagnostic Findings
 
 **Finding 1 — Reward Progression (Successful)**
 
@@ -291,7 +305,7 @@ GRPO policy loss oscillated between −0.04 and +0.12 throughout the run. Negati
 
 The final checkpoint (step 500) achieves 0.48 composite reward. The checkpoint at step 250 achieves 0.50. The difference is small but consistent across multiple eval scenarios. Recommend using `checkpoint-250` for inference and evaluation.
 
-### Run 2 Final Verdict
+#### Run 2 Final Verdict
 
 A successful production training run. The 257% improvement over baseline demonstrates that GRPO with a deterministic, multi-rubric reward function is an effective approach for authority-aware instruction conflict resolution.
 
@@ -301,7 +315,7 @@ The two primary issues to address in Run 3 are: β too low (use 0.04+) and rewar
 
 ---
 
-## Cumulative Results Summary
+### Cumulative Results Summary
 
 | Run | Hardware | Steps | Scenarios | Epochs | Peak Reward | Final Reward | vs. Baseline |
 |---|---|---|---|---|---|---|---|
@@ -311,7 +325,7 @@ The two primary issues to address in Run 3 are: β too low (use 0.04+) and rewar
 
 ---
 
-## Recommended Configuration for Run 3
+### Recommended Configuration for Run 3
 
 Based on all findings above:
 
