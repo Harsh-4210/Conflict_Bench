@@ -1,0 +1,7 @@
+# UI dependencies of the leaderboard Space. The scoring code (verifier, generator, scenario_io, scripts/evaluate)
+# is standard-library only and comes from the ConflictBench repo at the pinned CONFLICTBENCH_REF.
+#
+# gradio 6.13.0 is the version tests/test_leaderboard_space.py runs against (same pin as training_space/).
+# huggingface_hub is imported lazily and only when the private answers are fetched from a private dataset repo.
+gradio==6.13.0
+huggingface_hub>=0.33.5,<2.0
