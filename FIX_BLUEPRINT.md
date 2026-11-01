@@ -435,17 +435,21 @@ Ordered by value for effort.
 
 ## Part E — Checklist summary (copy into issues)
 
+### Status as of 1 Nov 2026
+
+Done and tested on CPU (`python -m pytest -q`): Phases 0–2, Phase 3, the CPU parts of Phase 4 (eval harness, cheat and rule-based baselines on `data/test_v1.jsonl`, generated leaderboard), the code of Phase 5, and Phase 6 (docs rewritten from the code, link checker, doc tests). Not done: anything that needs a GPU or an API key (the base-model and frontier rows of P4-2, P4-3 re-scoring of the old adapter, the P5-1 dry run on Colab/Kaggle, P5-4 real training run), the package move of P1-8 (`openenv.yaml` paths are fixed; the `conflictbench/` package folder is not), and the full scale target of P3-5 (17 topics × 5 phrasings instead of 25+ × 8+). `[~]` = partly done.
+
 ```
 PHASE 0  [x] P0-1 tests  [x] P0-2 cheat baselines  [x] P0-3 lock Space (code; Space settings still manual)  [x] P0-4 status banner + LICENSE
-PHASE 1  [ ] P1-1 parser  [ ] P1-2 seeded generator  [ ] P1-3 type labels  [ ] P1-4 server
-         [ ] P1-5 env cleanup  [ ] P1-6 demo app  [ ] P1-7 inference.py  [ ] P1-8 packaging
-PHASE 2  [ ] P2-1 contradictions  [ ] P2-2 overridden + split  [ ] P2-3 strict direction
-         [ ] P2-4 format gate  [ ] P2-5 drop efficiency  [ ] P2-6 weights  [ ] P2-7 hack tests ON
-PHASE 3  [ ] P3-1 balanced winners  [ ] P3-2 distractors  [ ] P3-3 hidden hierarchy
-         [ ] P3-4 rules (scope/time/delegation/conditional/chains)  [ ] P3-5 variety  [ ] P3-6 splits  [ ] P3-7 not-a-lookup test
-PHASE 4  [ ] P4-1 eval harness  [ ] P4-2 baseline table  [ ] P4-3 re-score old adapter
-PHASE 5  [ ] P5-1 one script + YAML  [ ] P5-2 resume/held-out  [ ] P5-3 pinned Space  [ ] P5-4 real run
-PHASE 6  [ ] P6-1 README  [ ] P6-2 docs  [ ] P6-3 links/case
+PHASE 1  [x] P1-1 parser  [x] P1-2 seeded generator  [x] P1-3 type labels  [x] P1-4 server
+         [x] P1-5 env cleanup  [x] P1-6 demo app  [x] P1-7 inference.py  [~] P1-8 packaging (yaml paths only)
+PHASE 2  [x] P2-1 contradictions  [x] P2-2 overridden + split  [x] P2-3 strict direction
+         [x] P2-4 format gate  [x] P2-5 drop efficiency  [x] P2-6 weights  [x] P2-7 hack tests ON
+PHASE 3  [x] P3-1 balanced winners  [x] P3-2 distractors  [x] P3-3 hidden hierarchy
+         [x] P3-4 rules (scope/time/delegation/conditional/chains)  [~] P3-5 variety  [x] P3-6 splits  [x] P3-7 not-a-lookup test
+PHASE 4  [x] P4-1 eval harness  [~] P4-2 baseline table (no model rows yet)  [ ] P4-3 re-score old adapter
+PHASE 5  [x] P5-1 one script + YAML (GPU dry run pending)  [x] P5-2 resume/held-out  [x] P5-3 pinned Space  [ ] P5-4 real run
+PHASE 6  [x] P6-1 README  [x] P6-2 docs  [x] P6-3 links/case
 PHASE 7  [ ] pick 1–2 from the list
 ```
 
