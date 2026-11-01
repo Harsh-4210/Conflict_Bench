@@ -70,7 +70,7 @@ training:
   method: GRPO
   configs:
     grpo_smoke:
-      model: unsloth/Qwen2.5-0.5B-Instruct
+      model: unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit
       lora_rank: 8
       lora_alpha: 8
     grpo_t4:

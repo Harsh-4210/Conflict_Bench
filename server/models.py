@@ -30,7 +30,7 @@ class ConflictBenchObservation(Observation):
         default="",
         description="Instruction document on reset; score summary (JSON) after a step",
     )
-    difficulty: Optional[int] = Field(default=None, description="Scenario difficulty 1-3")
+    difficulty: Optional[int] = Field(default=None, description="Scenario difficulty level (1 to generator.MAX_DIFFICULTY)")
     domain: Optional[str] = Field(default=None, description="Business domain")
     num_conflicts: Optional[int] = Field(default=None, description="Number of planted conflicts")
     scenario_id: Optional[str] = Field(default=None, description="Scenario identifier")

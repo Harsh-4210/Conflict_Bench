@@ -1167,11 +1167,11 @@ with gr.Blocks(
                     <div style="margin-bottom:20px;">
                       <h3 style="color:#c4b5fd;font-size:15px;font-weight:600;margin-bottom:8px;">Deterministic Scoring — No LLM Judge</h3>
                       <p style="color:#64748b;font-size:13px;line-height:1.7;">
-                        ConflictBench uses five rule-based rubric functions scored against
-                        programmatically-generated ground truth. The composite reward gives GRPO a
-                        multi-part signal. The verifier is under active revision after an audit found
-                        shortcut strategies that score well without resolving conflicts, so treat
-                        scores shown here as work in progress.
+                        ConflictBench scores answers with three rule-based rubrics (correct final
+                        state, conflict identification, no contradictions) behind a format gate,
+                        against ground truth computed by a deterministic resolver. An audit found
+                        that the original reward could be gamed; the reward and the task were
+                        redesigned and the cheat strategies are now regression tests (see the README).
                       </p>
                     </div>
                     {METHODOLOGY_HTML}
@@ -1179,7 +1179,7 @@ with gr.Blocks(
                     <h3 style="color:#c4b5fd;font-size:15px;font-weight:600;margin-bottom:12px;">Why This Is Hard for LLMs</h3>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;color:#64748b;line-height:1.6;">
                       <div>• Conflicts are <em>implicit</em> — no instruction labels itself as conflicting</div>
-                      <div>• The authority tiers are given in the system prompt; the model must map each source to its tier and apply them</div>
+                      <div>• By default the tier list is <em>not</em> shown: the model must rank people from their job titles and the notices in the document</div>
                       <div>• Every conflict must be resolved consistently in the final execution plan</div>
                       <div>• Requires structured JSON output with <em>correct instruction IDs</em></div>
                     </div>

@@ -295,7 +295,7 @@ python -m training.train_grpo --config configs/grpo_a10g.yaml           # A10G /
 
 | Config | Model | LoRA r | Train / val scenarios | Difficulty mix (train) |
 |---|---|---:|---|---|
-| `grpo_smoke.yaml` | `unsloth/Qwen2.5-0.5B-Instruct` | 8 | 20 / 4 | level 1 only |
+| `grpo_smoke.yaml` | `unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit` | 8 | 20 / 4 | level 1 only |
 | `grpo_t4.yaml` | `unsloth/Qwen2.5-3B-Instruct-bnb-4bit` | 16 | 200 / 20 | 60% level 1, 40% level 2 |
 | `grpo_a10g.yaml` | `unsloth/Qwen2.5-3B-Instruct-bnb-4bit` | 16 | 600 / 30 | 40% / 40% / 20% levels 1–3 |
 

@@ -44,7 +44,7 @@ config["load_in_4bit"] = True
 
 **Recurrence:** This bug appeared three times across three separate attempts before the root cause was correctly identified. The old script enforced the fix in `detect_gpu_config()`.
 
-*Current code: there is no GPU auto-detection. Each YAML in `configs/` sets `load_in_4bit` itself: `true` for the two Qwen2.5-3B configs, `false` for the 0.5B smoke config, which has not been run yet.*
+*Current code: there is no GPU auto-detection. Each YAML in `configs/` sets `load_in_4bit` itself: `true` for all three, including the 0.5B smoke config (not run yet), because of this bug.*
 
 ---
 

@@ -1,16 +1,18 @@
 """
 ConflictBench — OpenEnv Environment
-Theme: Long-Horizon Instruction Following (Theme 2) + Scale AI sub-theme bonus.
+Submitted under the hackathon's "Long-Horizon Instruction Following" theme;
+each episode is a single step.
 
 Environment name: ConflictBenchEnv
-An LLM agent is given a realistic business instruction document containing
-20–35 directives from multiple stakeholders. Some instructions are in direct
-conflict. The agent must identify every conflict, resolve it according to
-an implicit authority hierarchy, and produce a clean execution plan.
+An LLM agent is given a business instruction document from several stakeholders
+(about 9-37 instructions depending on difficulty). Some pairs conflict, some only
+look similar. The agent must find every real conflict, resolve it by authority
+(tiers, standing rules, delegations, dates, conditions; see resolver.py) and
+produce a consistent execution plan.
 
 Gym-style API: reset() / step() / state property.
-Rewards come from verifier.score(): a deterministic weighted sum of five
-rubric functions (no LLM judge).
+Rewards come from verifier.score(): a deterministic weighted sum of three
+rubrics behind a format gate (no LLM judge).
 """
 
 import sys
@@ -53,14 +55,13 @@ class ConflictBenchEnv(Environment):
 
     metadata = {
         "name": "ConflictBenchEnv",
-        "version": "1.0.0",
-        "theme": "Long-Horizon Instruction Following",
-        "sub_theme": "Scale AI — Long-Horizon Workflows (non-code, business setting)",
+        "version": "2.0.0",
+        "theme": "Long-Horizon Instruction Following (hackathon theme; episodes are single-step)",
         "authors": ["Harsh Jain"],
         "description": (
             "An LLM environment where the agent receives a realistic business "
             "instruction document with embedded conflicts and must resolve them "
-            "according to an implicit stakeholder authority hierarchy."
+            "by stakeholder authority (tiers, standing rules, delegations, dates)."
         ),
     }
 

@@ -21,8 +21,8 @@ pip install -r requirements-train.txt
 | | `grpo_smoke.yaml` | `grpo_t4.yaml` | `grpo_a10g.yaml` |
 |---|---|---|---|
 | Purpose | plumbing test; its numbers mean nothing | free Kaggle / Colab T4 | A10G / L4 24 GB, also the training Space |
-| Model | `unsloth/Qwen2.5-0.5B-Instruct` | `unsloth/Qwen2.5-3B-Instruct-bnb-4bit` | `unsloth/Qwen2.5-3B-Instruct-bnb-4bit` |
-| 4-bit | no | yes | yes |
+| Model | `unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit` | `unsloth/Qwen2.5-3B-Instruct-bnb-4bit` | `unsloth/Qwen2.5-3B-Instruct-bnb-4bit` |
+| 4-bit | yes | yes | yes |
 | LoRA r / alpha | 8 / 8 | 16 / 16 | 16 / 16 |
 | Train / val scenarios | 20 / 4 | 200 / 20 | 600 / 30 |
 | Train difficulty mix | level 1 | 60% L1, 40% L2 | 40% L1, 40% L2, 20% L3 |
