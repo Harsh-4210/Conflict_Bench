@@ -1,0 +1,66 @@
+{
+  "run_name": "multistep_cautious_resolver",
+  "task": "multistep",
+  "backend": "strategy",
+  "strategy": "cautious_resolver",
+  "model": null,
+  "adapter": null,
+  "data_path": "data/test_v1.jsonl",
+  "data_sha256": "multistep-e17169bb9de6bfb760ff23e0551ec170396ce11bd39e8db3ef50090497217b9a",
+  "data_file_sha256": "e17169bb9de6bfb760ff23e0551ec170396ce11bd39e8db3ef50090497217b9a",
+  "n_scenarios_in_data": 600,
+  "episode_seed_base": 0,
+  "env": {
+    "budget_factor": 3,
+    "max_per_turn": 3
+  },
+  "reward_formula": {
+    "revert_penalty_each": 0.03,
+    "revert_penalty_cap": 0.15,
+    "waste_penalty_each": 0.01,
+    "waste_penalty_cap": 0.1
+  },
+  "git_commit": "142a3366dd423931d9f8e0b152457c3a26aaa14c",
+  "git_dirty": false,
+  "timestamp_utc": "2026-11-01T04:11:24+00:00",
+  "n": 600,
+  "skipped_too_long": 0,
+  "parse_failure_rate": 0.0,
+  "composite": {
+    "mean": 1.0,
+    "ci95_low": 1.0,
+    "ci95_high": 1.0,
+    "n_resamples": 1000,
+    "ci_seed": 0
+  },
+  "per_difficulty": {
+    "1": {
+      "mean": 1.0,
+      "n": 200
+    },
+    "2": {
+      "mean": 1.0,
+      "n": 200
+    },
+    "3": {
+      "mean": 1.0,
+      "n": 200
+    }
+  },
+  "per_rubric": {
+    "accuracy": 1.0,
+    "foreseeable_reverts": 0.0,
+    "wasted_steps": 0.0,
+    "revert_penalty": 0.0,
+    "waste_penalty": 0.0
+  },
+  "episode_stats": {
+    "mean_instructions": 20.585,
+    "mean_turns": 10.64,
+    "mean_steps_used": 32.12,
+    "mean_reverts": 3.325,
+    "share_episodes_with_a_revert": 0.9483333333333334,
+    "share_ended_by_budget": 0.0,
+    "share_perfect_accuracy": 1.0
+  }
+}
