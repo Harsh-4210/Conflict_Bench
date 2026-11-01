@@ -25,3 +25,5 @@ checkpoint-*/
 ehthumbs.db
 Thumbs.db
 .env
+# Benchmark exports (private/ holds the answers; never commit)
+dist/
