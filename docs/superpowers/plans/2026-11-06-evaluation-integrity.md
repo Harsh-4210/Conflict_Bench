@@ -23,7 +23,7 @@
 - [x] Add task/scorer/protocol metadata and real dataset hashes to new evaluation summaries. Separate task versions, scorer fingerprints, selections and episode settings in leaderboards, with conservative handling of legacy records.
 - [x] Reject malformed YAML, nonmapping inputs, nonstring keys, nonfinite numbers and ambiguous difficulty-map keys as ConfigError, without model imports.
 - [x] Update docs and phase checkboxes to distinguish implementation from pending verification; provide exact commands.
-- [ ] Review changes, commit, and push the scoped implementation. Leave package migration and task-semantic extensions pending until their own integration boundary.
+- [x] Review changes, commit, and push the scoped implementation (`6f6e651` on `origin/feat/future-scope`). Leave package migration and task-semantic extensions pending until their own integration boundary. Independent final approval and user-run tests remain open.
 
 ## Review focus
 

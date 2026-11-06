@@ -6,7 +6,8 @@ Updated 6 November 2026. This is the live execution ledger for [the detailed pha
 
 ## Current implementation batch: evaluation integrity
 
-Starting commit: `1efb0fa`. Plan: [evaluation integrity](superpowers/plans/2026-11-06-evaluation-integrity.md).
+Starting commit: `1efb0fa`. Implementation commit: [`6f6e651`](https://github.com/Harsh-4210/Conflict_Bench/commit/6f6e651).
+Pushed to `origin/feat/future-scope`. Plan: [evaluation integrity](superpowers/plans/2026-11-06-evaluation-integrity.md).
 
 | Item | Implementation | Verification | Files / evidence |
 |---|---|---|---|
@@ -16,7 +17,7 @@ Starting commit: `1efb0fa`. Plan: [evaluation integrity](superpowers/plans/2026-
 | Phase 12: scorer/task/protocol provenance | Implemented | AWAITING_HARSH_RUN | `scripts/provenance.py`, both evaluators, leaderboard; requested and actually scored subsets have separate hashes |
 | Phase 12: config boundary hardening | Implemented | AWAITING_HARSH_RUN | `training/config.py`, override parsing, `tests/test_training_config_boundaries.py` |
 | Phase 11: phase-wise plan | Implemented | Document review pending | `LUNA_HANDOFF.md`: 14 phases, detailed checkboxes and all original blueprint IDs retained |
-| Phase 13: code review and push | IN_PROGRESS | No test claim | Commit recorded below after review |
+| Phase 13: current-batch source push | Implemented and pushed | Tests and independent final verdict remain pending | `6f6e651`; review findings addressed, source self-review recorded |
 
 ## Harsh: commands for this batch
 
@@ -52,7 +53,7 @@ Expected evidence to supply: pytest summaries/errors; `dist/manual-evaluation-in
 - Phase 10: fresh private set and live publication remain pending; publication requires authorization.
 - Phase 11: public README/architecture/demo/write-up updates await implementation and measurement evidence.
 - Phase 12: incremental/resumable evaluation, richer model/hierarchy revisions, packaging CI and further integration remain pending.
-- Phase 13: current batch requires review/push; release, PR merge and HF publication are not authorized by a normal feature-branch push.
+- Phase 13: implementation commit `6f6e651` is pushed; user verification and independent final approval remain open. Release, PR merge and HF publication are not authorized by a normal feature-branch push.
 
 ## Decisions and limitations
 
@@ -71,6 +72,7 @@ An independent read-only review identified missing strict CLI YAML parsing, miss
 different skipped-case subsets sharing a ranking, and invalid timestamp/null-document boundary handling.
 All four were addressed with source changes and additional unexecuted regression cases. The reviewer
 reached its usage limit before a final verdict; no independent approval is claimed. The implementation
-received an additional source/diff self-review, with no execution. Record the scoped implementation
-commit and remote confirmation before closing Phase 13 for this batch. Keep all user-run verification
-entries open until actual results arrive.
+received an additional source/diff self-review, with no execution. Commit `6f6e651` was pushed successfully
+to `feat/future-scope` (Git reported remote update `1efb0fa..6f6e651`). This closes source delivery for
+this batch, not test verification, independent final approval or the whole release phase. Keep all
+user-run verification entries open until actual results arrive.

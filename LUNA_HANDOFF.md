@@ -25,7 +25,7 @@
 | 10 | Private benchmark/live publication | Existing tooling; deployment pending | Explicit publication access/authorization and private set |
 | 11 | Documentation/demo/write-up | Phase-wise handoff updated | Measured results and extension evidence pending |
 | 12 | CI/provenance/config robustness | Provenance and config boundary code implemented | User-run tests; resume and further integration pending |
-| 13 | Review, GitHub integration/release | Current batch in progress | Code review and scoped commit/push; no merge/publication |
+| 13 | Review, GitHub integration/release | Current batch source pushed: `6f6e651` | Tests/independent final approval pending; no merge/publication |
 
 Detailed action checkboxes, dependencies and acceptance conditions follow below. The crosswalk at the end retains every original blueprint item. See [docs/LUNA_PROGRESS.md](docs/LUNA_PROGRESS.md) for files, commands and commit evidence.
 
@@ -378,6 +378,8 @@ Required work:
 **Complete when:** Harsh-supplied checks/CI runs cover the new contracts, all failures have explicit resolution or blockers, and no unvalidated GPU assumption is hidden behind a passing CPU suite.
 
 ## Phase 13 — Final integration and reproducible release (R13)
+
+- [x] Deliver the first source batch in commit `6f6e651` on `origin/feat/future-scope`: provenance, deferral reference, config boundaries, tests and phased tracking. Review findings addressed and source self-review completed; tests and independent final approval remain pending.
 
 - [ ] Review the complete diff and obtain a fresh code review for substantial changes. Reconcile every important finding, with tests prepared for Harsh to execute.
 - [ ] Keep commits focused; do not bundle secrets, `.claude/`, model weights, private datasets, local caches or unrelated worktrees.
