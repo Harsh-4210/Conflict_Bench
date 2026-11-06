@@ -18,6 +18,13 @@ pip install -r requirements-train.txt
 
 ## 2. The configs
 
+`configs/grpo_4060.yaml` is an additional **experimental low-memory preset**, migrated from the former
+`train_grpo_prod.py`: 120 train / 20 val scenarios at level 1, two epochs, batch 1 with accumulation 4,
+four generations, a 3072-token prompt budget and 1024-token completion budget. It uses the maintained
+pipeline's train/val splits, shared prompt, token-length filter, reward and checkpoint selection. Reporting
+is local (`report_to: none`, `hub_repo: null`). It has **not been validated on an 8 GB GPU**; its name is
+not a memory-fit guarantee. Use the supported Linux + NVIDIA stack and run the smoke config first.
+
 | | `grpo_smoke.yaml` | `grpo_t4.yaml` | `grpo_a10g.yaml` |
 |---|---|---|---|
 | Purpose | plumbing test; its numbers mean nothing | free Kaggle / Colab T4 | A10G / L4 24 GB, also the training Space |
@@ -53,6 +60,22 @@ python -m training.train_grpo --config configs/grpo_smoke.yaml
 python -m training.train_grpo --config configs/grpo_t4.yaml
 python -m training.train_grpo --config configs/grpo_a10g.yaml
 ```
+
+To check settings without model libraries, downloads or training, use:
+
+```bash
+python -m training.train_grpo --config configs/grpo_4060.yaml --check-config
+```
+
+This prints the validated config as JSON, including command-line overrides. It does not measure token
+lengths. `--check-config` and `--dry-run` are mutually exclusive. A tokenizer-only dry run needs
+`transformers==4.57.6` and `pyyaml==6.0.3`, but not torch or Unsloth; install these in a separate environment
+to keep the CPU test environment unchanged.
+
+`python train_grpo_prod.py [args]` is now a deprecated compatibility command that selects
+`configs/grpo_4060.yaml` unless `--config` is supplied. It runs the same maintained pipeline, with no
+separate character filter, prompt, reward function or evaluation implementation. Its former `--eval`
+option directs you to `scripts/evaluate.py --model <base-model> --adapter <adapter-path>`.
 
 Overrides without editing the YAML:
 
@@ -116,3 +139,24 @@ This scores every test scenario with greedy decoding and the same prompt, and wr
 - **What it runs.** `train_script.py` loads `configs/grpo_a10g.yaml` from that checkout and calls the same `training.train_grpo.train`. The settings table in the UI comes from constants in `train_script.py`; the run, and `tests/test_training_space_lock.py`, refuse to go ahead if they differ from the YAML.
 - **Cost lock.** The Start button works only with the password in the Space secret `TRAIN_PASSWORD`; without that secret, training is disabled. Also keep the Space private or paused when not in use (a manual setting on huggingface.co).
 - **Hub upload.** Optional: set `HF_REPO_ID` (and the `HF_TOKEN` secret) to push the adapter.
+
+## Local Docker GPU run (Windows PowerShell)
+
+Docker Desktop must use its Linux engine with NVIDIA GPU support. The local runtime installs the same
+pinned stack as the training Space and mounts your current checkout, including uncommitted changes.
+The build context contains only `requirements-train.txt`; it does not copy local credentials or datasets
+into the image. Model downloads are retained in a named Docker volume.
+
+```powershell
+docker build -f docker/training/Dockerfile -t conflictbench-training:local .
+
+$repoPath = (Get-Location).Path
+docker run --rm --gpus all --mount "type=bind,source=$repoPath,target=/workspace" --mount type=volume,source=conflictbench-hf-cache,target=/cache/huggingface conflictbench-training:local python -m training.train_grpo --config configs/grpo_smoke.yaml --dry-run
+
+docker run --rm --gpus all --shm-size 2g --mount "type=bind,source=$repoPath,target=/workspace" --mount type=volume,source=conflictbench-hf-cache,target=/cache/huggingface conflictbench-training:local
+```
+
+The last command defaults to the 10-step smoke config. It writes checkpoints to
+`conflictbench-grpo-output/grpo_smoke/` and logs and metadata to `results/grpo_smoke/` on the host.
+There are no published ports, W&B reporting or automatic Hub uploads. The first build downloads several
+GB of CUDA and training dependencies. Passing the smoke test validates the pipeline, not model quality.

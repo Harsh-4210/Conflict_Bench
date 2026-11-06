@@ -560,7 +560,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--set", dest="overrides", action="append", default=[], type=_parse_override,
                    metavar="KEY=VALUE", help="override any config key (repeatable)")
     p.add_argument("--no-resume", action="store_true", help="ignore existing checkpoints in output_dir")
-    p.add_argument("--dry-run", action="store_true",
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--check-config", action="store_true",
+                      help="validate and print the resolved config, then exit (no model libraries or downloads)")
+    mode.add_argument("--dry-run", action="store_true",
                    help="validate the config, build the datasets with the real tokenizer, print stats, then exit "
                         "(needs `transformers` only, no GPU)")
     return p
@@ -581,8 +584,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     log.info("config %s ok: model=%s, %d train / %d val scenarios, %d prompts per step",
              args.config, cfg.model, cfg.train_size, cfg.val_size, cfg.prompts_per_step)
 
+    if args.check_config:
+        print(json.dumps(cfg.to_dict(), indent=2))
+        return 0
+
     if args.dry_run:
-        from transformers import AutoTokenizer
+        try:
+            from transformers import AutoTokenizer
+        except ImportError:
+            log.error("--dry-run needs the tokenizer dependency: pip install transformers==4.57.6. "
+                      "Use --check-config to validate settings without model libraries or downloads.")
+            return 2
         tokenizer = AutoTokenizer.from_pretrained(cfg.model)
         try:
             built = build_datasets(cfg, tokenizer)

@@ -1,0 +1,4 @@
+# Only the dependency list is needed in the image build context.
+# In particular, never send .env, local model weights or test answers.
+**
+!requirements-train.txt

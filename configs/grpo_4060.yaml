@@ -1,0 +1,43 @@
+# Experimental low-memory preset migrated from train_grpo_prod.py.
+# Not yet GPU-validated: 8 GB compatibility and runtime are not established.
+# Use the supported Linux + NVIDIA training stack (WSL2, Colab or a Linux host).
+# Start with grpo_smoke.yaml; check this dataset with --dry-run before training.
+run_name: grpo_4060
+output_dir: conflictbench-grpo-output/grpo_4060
+results_dir: results
+seed: 42
+
+model: unsloth/Qwen2.5-3B-Instruct-bnb-4bit
+max_seq_length: 4096
+load_in_4bit: true
+lora_r: 16
+lora_alpha: 16
+lora_dropout: 0.0
+lora_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+train_size: 120
+val_size: 20
+train_difficulty_mix: {1: 1.0}
+val_difficulty_mix: {1: 1.0}
+max_prompt_tokens: 3072
+max_completion_tokens: 1024
+
+learning_rate: 5.0e-6
+warmup_steps: 12
+lr_scheduler_type: cosine
+weight_decay: 0.0
+beta: 0.04
+num_generations: 4
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 4
+temperature: 0.9
+top_p: 0.95
+epochs: 2.0
+max_steps: -1
+
+logging_steps: 10
+eval_steps: 50
+save_steps: 100
+save_total_limit: 3
+report_to: none
+hub_repo: null
