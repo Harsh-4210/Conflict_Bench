@@ -44,6 +44,13 @@ not a memory-fit guarantee. Use the supported Linux + NVIDIA stack and run the s
 
 Every config sets `report_to: none` and `hub_repo: null`, so by default nothing is sent to W&B or the Hugging Face Hub. All keys are checked when the file is loaded (`training/config.py`); for example the run stops before loading a model if `max_prompt_tokens + max_completion_tokens > max_seq_length`, if batch × accumulation is not divisible by `num_generations`, or if `save_steps` is not a multiple of `eval_steps`.
 
+Configuration parsing now also rejects malformed/duplicate-key YAML, nonmapping inputs, nonstring
+setting names, nonfinite numeric values, overflowing difficulty-weight sums and ambiguous difficulty
+keys instead of silently normalizing them. Malformed YAML in `--set` becomes an argparse error.
+Empty/null root YAML documents are rejected; use an explicit `{}` mapping for defaults. File and CLI
+YAML parsing share duplicate-key and invalid-timestamp handling. Regression tests for these boundary cases are written and await Harsh's execution; see
+[the progress ledger](LUNA_PROGRESS.md).
+
 ## 3. Run
 
 ```bash

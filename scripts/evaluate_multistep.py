@@ -3,7 +3,7 @@ ConflictBench — multi-step baselines
 Plays the multi-step environment (multistep/) with scripted strategies and writes one
 summary per strategy to results/multistep_<strategy>/summary.json. No model, no network.
 
-Strategies (all but do_nothing play turn by turn; "known" = what has arrived so far):
+Strategies ("known" = what has arrived so far):
   oracle                 sees the future: applies exactly the final winners, never reverts
   cautious_resolver      each turn re-runs resolve() on what is known; applies winners and
                          reverts anything that stopped being a winner
@@ -12,6 +12,7 @@ Strategies (all but do_nothing play turn by turn; "known" = what has arrived so 
   apply_all_never_revert applies every message that is not already known to lose; never reverts
   greedy_latest          applies every message the moment it arrives; last writer wins; never reverts
   do_nothing             calls finish at once
+  wait_until_end         defers all writes until every message has arrived, then applies known winners
 
 Usage:
   python scripts/evaluate_multistep.py                       # all strategies on data/test_v1.jsonl
@@ -37,6 +38,7 @@ from generator import GeneratorConfig, Scenario, ScenarioGenerator
 from multistep.env import DEFAULT_BUDGET_FACTOR, DEFAULT_MAX_PER_TURN, MultiStepConflictEnv
 from multistep.scoring import REVERT_PENALTY, REVERT_PENALTY_CAP, WASTE_PENALTY, WASTE_PENALTY_CAP
 from scenario_io import dumps_scenario, load_scenarios
+from scripts.provenance import evaluation_provenance
 
 DEFAULT_DATA = ROOT / "data" / "test_v1.jsonl"
 N_RESAMPLES = 1000
@@ -110,6 +112,21 @@ def do_nothing(env: MultiStepConflictEnv) -> Iterator[Action]:
     yield {"tool": "finish"}
 
 
+def wait_until_end(env: MultiStepConflictEnv) -> Iterator[Action]:
+    """Reference deferral exploit for inbox-v1; no future access is needed.
+
+    Apply in arrival order, matching the target state's last-writer semantics.
+    This is a privileged structured solver, not a text-only language model.
+    """
+    while env.more_messages:
+        yield {"tool": "wait"}
+    winners = env.known_followed()
+    for iid in env.arrived_ids:
+        if iid in winners:
+            yield {"tool": "apply", "id": iid}
+    yield {"tool": "finish"}
+
+
 STRATEGIES: Dict[str, Strategy] = {
     "oracle": oracle,
     "cautious_resolver": cautious_resolver,
@@ -117,6 +134,7 @@ STRATEGIES: Dict[str, Strategy] = {
     "apply_all_never_revert": apply_all_never_revert,
     "greedy_latest": greedy_latest,
     "do_nothing": do_nothing,
+    "wait_until_end": wait_until_end,
 }
 
 
@@ -192,17 +210,21 @@ def summarize(
 
     return {
         "run_name": f"multistep_{strategy}",
-        "task": "multistep",
+        **evaluation_provenance(
+            "multistep", "inbox-v1",
+            {name: ROOT / name for name in ("multistep/scoring.py", "multistep/state.py", "multistep/env.py", "resolver.py")},
+            {**env_settings, "episode_seed_base": seed},
+            (r["scenario_id"] for r in rows),
+        ),
         "backend": "strategy",
         "strategy": strategy,
         "model": None,
         "adapter": None,
         "data_path": data_label,
-        # Distinct from the single-step runs' hash so scripts/make_leaderboard.py (which groups by
-        # this field) never ranks multi-step rewards next to single-step composites.
-        "data_sha256": f"multistep-{data_sha}",
+        "data_sha256": data_sha,
         "data_file_sha256": data_sha,
         "n_scenarios_in_data": n_in_data,
+        "n_scenarios_selected": len(rows),
         "episode_seed_base": seed,
         "env": env_settings,
         "reward_formula": {

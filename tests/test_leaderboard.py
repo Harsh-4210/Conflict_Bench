@@ -43,3 +43,19 @@ def test_regenerating_is_stable(tmp_path):
     first = (tmp_path / "leaderboard.md").read_text(encoding="utf-8")
     make_leaderboard.main(["--results-dir", str(tmp_path)])
     assert (tmp_path / "leaderboard.md").read_text(encoding="utf-8") == first
+
+
+def test_same_file_different_protocols_get_separate_tables(tmp_path):
+    _write(tmp_path, "single", "a" * 64, 0.5)
+    _write(tmp_path, "multi", "a" * 64, 1.0)
+    path = tmp_path / "multi" / "summary.json"
+    row = json.loads(path.read_text())
+    row.update(task="multistep", task_version="inbox-v1", scorer_sha256="b" * 64,
+               protocol_sha256="c" * 64, selection_sha256="d" * 64)
+    path.write_text(json.dumps(row))
+    text = make_leaderboard.main(["--results-dir", str(tmp_path)])
+    assert text.count("## Data set") == 2
+    assert "Task: `multistep`" in text
+    assert "unversioned" in text
+    for section in text.split("## Data set")[1:]:
+        assert not ("strategy: single" in section and "strategy: multi" in section)

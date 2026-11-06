@@ -23,6 +23,14 @@ Rows are only comparable when they share one data set. `summary.json` stores the
 file and the git commit, and `leaderboard.md` puts each data hash under its own heading. If the
 generator changes, `--generate` writes a new file with a new hash instead of overwriting the old one.
 
+New evaluation summaries additionally record task/version, scorer-source fingerprints, protocol
+settings/hash and separate ordered requested/scored scenario-selection hashes. Different skipped-case
+subsets cannot share a ranking merely because their skip counts match. The leaderboard separates all these dimensions,
+so matching file hashes alone no longer put different tasks or scorer versions into one ranking.
+Historical summaries remain readable in separate `unversioned` groups; no missing provenance is
+invented. Limited runs record both full source-file size and selected scenario count. These changes
+have regression tests prepared for manual execution; see [the progress ledger](../docs/LUNA_PROGRESS.md).
+
 Setup for the CPU rows: Python 3.10+ and `pip install -r requirements-dev.txt` (needs no torch).
 
 ## Rebuild the leaderboard

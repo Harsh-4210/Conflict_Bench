@@ -44,7 +44,7 @@ import verifier
 from generator import GeneratorConfig, ScenarioGenerator
 from prompts import build_messages
 from scenario_io import dumps_scenario, loads_scenario
-from training.config import ConfigError, TrainConfig, allocate_counts, load_config
+from training.config import ConfigError, TrainConfig, allocate_counts, load_config, parse_yaml_value
 
 log = logging.getLogger("conflictbench.train")
 
@@ -543,11 +543,14 @@ def train(cfg: TrainConfig, *, resume: bool = True, progress_callback: Optional[
 # ===========================================================================
 
 def _parse_override(text: str) -> Tuple[str, Any]:
-    import yaml
     if "=" not in text:
         raise argparse.ArgumentTypeError(f"--set expects key=value, got {text!r}")
     key, value = text.split("=", 1)
-    return key.strip(), yaml.safe_load(value)
+    try:
+        parsed = parse_yaml_value(value)
+    except ConfigError as exc:
+        raise argparse.ArgumentTypeError(f"invalid YAML value for {key.strip()}: {exc}") from exc
+    return key.strip(), parsed
 
 
 def build_parser() -> argparse.ArgumentParser:

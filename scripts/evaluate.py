@@ -30,6 +30,7 @@ if str(ROOT) not in sys.path:
 from generator import GeneratorConfig, Scenario, ScenarioGenerator
 from scenario_io import load_scenarios, save_scenarios
 from verifier import score
+from scripts.provenance import evaluation_provenance
 
 RUBRICS = ("correct_final_state", "no_contradictions", "conflict_identification",
            "efficiency", "format_compliance")
@@ -162,7 +163,7 @@ def summarise(rows: List[dict], skipped: int, n_samples: int) -> dict:
 
 
 def run_evaluation(backend, scenarios: List[Scenario], run_name: str, out_dir: Path,
-                   data_path: Path, progress: bool = False) -> dict:
+                   data_path: Path, progress: bool = False, n_scenarios_in_data: Optional[int] = None) -> dict:
     run_dir = Path(out_dir) / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     rows: List[dict] = []
@@ -183,12 +184,21 @@ def run_evaluation(backend, scenarios: List[Scenario], run_name: str, out_dir: P
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
     meta = backend.describe()
+    scored_ids = {row["scenario_id"] for row in rows}
     summary = {
         "run_name": run_name,
         **meta,
+        **evaluation_provenance(
+            "single_step", "+".join(sorted({sc.generator_version or "legacy" for sc in scenarios})) or "empty",
+            {"verifier.py": ROOT / "verifier.py"},
+            {"prompt_sha256": sha256_file(ROOT / "prompts.py")},
+            (sc.scenario_id for sc in scenarios),
+            scored_scenario_ids=(sc.scenario_id for sc in scenarios if sc.scenario_id in scored_ids),
+        ),
         "data_path": _display_path(Path(data_path)),
         "data_sha256": sha256_file(Path(data_path)),
-        "n_scenarios_in_data": len(scenarios),
+        "n_scenarios_in_data": n_scenarios_in_data if n_scenarios_in_data is not None else len(scenarios),
+        "n_scenarios_selected": len(scenarios),
         **git_info(),
         "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         **summarise(rows, skipped, meta.get("samples", 1)),
@@ -267,11 +277,13 @@ def main(argv: Optional[Sequence[str]] = None) -> dict:
         raise SystemExit("give exactly one of --data or --generate")
     data_path = Path(args.data) if args.data else generate_dataset(args.generate, args.seed, out_dir, args.split)
     scenarios = load_scenarios(data_path)
+    n_in_data = len(scenarios)
     if args.limit:
         scenarios = scenarios[: args.limit]
     backend = make_backend(args)
     run_name = args.run_name or default_run_name(args, data_path)
-    summary = run_evaluation(backend, scenarios, run_name, out_dir, data_path, progress=True)
+    summary = run_evaluation(backend, scenarios, run_name, out_dir, data_path, progress=True,
+                             n_scenarios_in_data=n_in_data)
     c = summary["composite"]
     print(f"{run_name}: composite {c['mean']:.4f} (95% CI {c['ci95_low']:.4f}-{c['ci95_high']:.4f}) "
           f"n={summary['n']} parse_fail={summary['parse_failure_rate']:.3f} "

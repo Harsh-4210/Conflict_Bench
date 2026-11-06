@@ -47,6 +47,41 @@ def test_summary_schema_and_limit(tmp_path):
     assert on_disk == s
 
 
+def test_summary_records_actual_selection_and_scorer_protocol(tmp_path):
+    full = _run(tmp_path, "--strategy", "empty", "--generate", "6", "--run-name", "full")
+    limited = _run(tmp_path, "--strategy", "empty", "--generate", "6", "--limit", "2", "--run-name", "part")
+    assert full["task"] == "single_step"
+    assert full["task_version"] == limited["task_version"]
+    assert full["scorer_sha256"] == limited["scorer_sha256"]
+    assert full["selection_sha256"] != limited["selection_sha256"]
+    assert limited["n_scenarios_in_data"] == 6
+    assert limited["n_scenarios_selected"] == 2
+
+
+def test_equal_skip_counts_for_different_cases_do_not_share_ranking(tmp_path):
+    from scripts.provenance import comparison_key
+
+    data = evaluate.generate_dataset(3, 42, tmp_path)
+    scenarios = load_scenarios(data)
+
+    class SkipOne:
+        def __init__(self, skipped_id):
+            self.skipped_id = skipped_id
+
+        def complete(self, scenario):
+            return None if scenario.scenario_id == self.skipped_id else ["{}"]
+
+        def describe(self):
+            return {"backend": "model", "model": "fixture", "samples": 1}
+
+    first = evaluate.run_evaluation(SkipOne(scenarios[0].scenario_id), scenarios, "first", tmp_path, data)
+    second = evaluate.run_evaluation(SkipOne(scenarios[1].scenario_id), scenarios, "second", tmp_path, data)
+    assert first["n"] == second["n"] == 2
+    assert first["skipped_too_long"] == second["skipped_too_long"] == 1
+    assert first["selection_sha256"] == second["selection_sha256"]
+    assert comparison_key(first) != comparison_key(second)
+
+
 def test_data_path_inside_repo_is_stored_relative(tmp_path):
     path = evaluate.ROOT / "results" / "data" / "_test_relpath.jsonl"
     try:

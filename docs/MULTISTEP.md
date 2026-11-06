@@ -90,7 +90,7 @@ The constants live in `multistep/scoring.py`.
 
 ## Baselines
 
-`scripts/evaluate_multistep.py` plays six scripted strategies on `data/test_v1.jsonl` (600
+The historical results below cover six scripted strategies on `data/test_v1.jsonl` (600
 scenarios, episode seeds 0..599, budget factor 3, at most 3 messages per turn):
 
 | Strategy | What it does |
@@ -157,14 +157,30 @@ Tests: `python -m pytest -q tests/test_multistep_*.py`.
 
 ## Limits
 
+### Deferral reference and explicit evaluation provenance
+
+`wait_until_end` is now a named scripted strategy. It waits for the complete inbox, then applies the
+known winners in arrival order. This exposes the current task's free-deferral limitation; registering
+the baseline does not add deadlines or solve the limitation. Its new regression tests have not yet
+been executed. To measure it without replacing committed baseline runs:
+
+```powershell
+python scripts/evaluate_multistep.py --strategy wait_until_end --out-dir dist/manual-evaluation-integrity
+```
+
+New summaries identify task version `inbox-v1`, scorer-source fingerprints (including the resolver),
+episode protocol and ordered requested/scored scenario selections. `data_sha256` is now the actual data hash; the leaderboard reads older prefixed
+records but separates incompatible/unknown protocols. Existing saved results are unchanged. See
+[the phase progress ledger](LUNA_PROGRESS.md) for pending verification and remaining timing/model-agent work.
+
 * The scripted baselines and the scoring rule use the same `resolve()` on the known messages,
   so `cautious_resolver` is the best-case agent for this rule, not a measurement of any model.
   No language model has been run on this environment: not yet measured.
 * Standing notices are not delivered over time; only messages and status facts are.
 * `reject` and `escalate` have no effect on the reward. All conflicts in the generator have a
   resolvable winner, so there is nothing the agent must escalate.
-* `multistep/` is not listed in `pyproject.toml`'s package map, and the `results/multistep_*`
-  summaries use a prefixed `data_sha256` so `scripts/make_leaderboard.py` keeps them in their own
-  group.
+* `multistep/` is not listed in `pyproject.toml`'s package map. Older `results/multistep_*`
+  summaries used a prefixed `data_sha256`; new summaries use explicit task/protocol identity and
+  preserve the actual file hash.
 * A scenario whose full set of instructions has an unresolvable conflict (equal authority, no
   dates) makes `reset` raise `UnresolvableConflict`. The generator does not produce these.

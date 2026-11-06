@@ -54,7 +54,37 @@ def test_summary_keeps_the_leaderboard_script_working_and_apart(tmp_path):
     _run(tmp_path, "--strategy", "oracle", "--generate", "6", "--seed", "1")
     text = make_leaderboard.main(["--results-dir", str(tmp_path)])
     assert "multistep_oracle" in text
-    assert "multistep-" in text      # its own data-set group, never ranked with single-step runs
+    assert "Task: `multistep`" in text
+
+
+def test_wait_until_end_applies_nothing_until_the_final_turn(monkeypatch):
+    env = ev.MultiStepConflictEnv(max_per_turn=1)
+    env.reset(seed=11, difficulty=2)
+    monkeypatch.setattr(env, "ground_truth", lambda: pytest.fail("must not see future ground truth"))
+    actions = ev.wait_until_end(env)
+    while env.more_messages:
+        action = next(actions)
+        assert action == {"tool": "wait"}
+        assert env.applied_ids() == []
+        env.step(action)
+    expected = [iid for iid in env.arrived_ids if iid in env.known_followed()]
+    applied = []
+    for action in actions:
+        if action["tool"] == "apply":
+            applied.append(action["id"])
+        env.step(action)
+    assert applied == expected
+
+
+def test_wait_until_end_records_v1_deferral_and_real_hash(tmp_path):
+    summary = _run(tmp_path, "--strategy", "wait_until_end", "--generate", "9")["wait_until_end"]
+    assert summary["composite"]["mean"] == 1.0
+    assert summary["episode_stats"]["mean_reverts"] == 0.0
+    assert summary["task_version"] == "inbox-v1"
+    assert "resolver.py" in summary["scorer_files"]
+    assert summary["data_sha256"] == summary["data_file_sha256"]
+    assert len(summary["data_sha256"]) == 64
+    assert len(summary["protocol_sha256"]) == 64
 
 
 def test_step_budget_is_never_the_reason_a_baseline_stops(tmp_path):

@@ -10,6 +10,7 @@ torch / unsloth / trl / datasets.
 from __future__ import annotations
 
 import dataclasses
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +21,36 @@ import yaml
 
 class ConfigError(ValueError):
     """Raised when a training config is missing, malformed or inconsistent."""
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Do not silently replace a YAML setting or alias an integer and boolean key."""
+
+
+def _unique_mapping(loader, node, deep=False):
+    loader.flatten_mapping(node)
+    mapping = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        try:
+            duplicate = key in mapping
+        except TypeError as exc:
+            raise yaml.constructor.ConstructorError(None, None, "unhashable configuration key", key_node.start_mark) from exc
+        if duplicate:
+            raise yaml.constructor.ConstructorError(None, None, f"duplicate configuration key {key!r}", key_node.start_mark)
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _unique_mapping)
+
+
+def parse_yaml_value(text: Any) -> Any:
+    """Use the same safe, duplicate-detecting YAML boundary for files and overrides."""
+    try:
+        return yaml.load(text, Loader=_UniqueKeyLoader)
+    except (yaml.YAMLError, ValueError, TypeError, OverflowError) as exc:
+        raise ConfigError(f"Invalid YAML value: {exc}") from exc
 
 
 def _default_targets() -> List[str]:
@@ -112,7 +143,8 @@ def _is_int(v: Any) -> bool:
 
 
 def _is_num(v: Any) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
+    return (isinstance(v, (int, float)) and not isinstance(v, bool)
+            and (not isinstance(v, float) or math.isfinite(v)))
 
 
 def _mix_problems(name: str, mix: Any) -> List[str]:
@@ -124,8 +156,15 @@ def _mix_problems(name: str, mix: Any) -> List[str]:
             out.append(f"{name}: difficulty keys must be integers >= 1, got {d!r}")
         if not _is_num(w) or w < 0:
             out.append(f"{name}: weight for difficulty {d!r} must be a number >= 0, got {w!r}")
-    if not out and sum(mix.values()) <= 0:
-        out.append(f"{name}: weights must not all be zero")
+    if not out:
+        try:
+            total = float(sum(mix.values()))
+        except OverflowError:
+            total = float("inf")
+        if not math.isfinite(total):
+            out.append(f"{name}: weight sum must be finite")
+        elif total <= 0:
+            out.append(f"{name}: weights must not all be zero")
     return out
 
 
@@ -212,7 +251,7 @@ def _coerce(name: str, value: Any, annotation: str) -> Any:
         if annotation == "float":
             try:
                 return float(value)
-            except ValueError:
+            except (ValueError, OverflowError):
                 raise ConfigError(f"{name}: expected a number, got {value!r}") from None
         if annotation == "int":
             try:
@@ -220,7 +259,10 @@ def _coerce(name: str, value: Any, annotation: str) -> Any:
             except ValueError:
                 raise ConfigError(f"{name}: expected an integer, got {value!r}") from None
     if annotation == "float" and _is_int(value):
-        return float(value)
+        try:
+            return float(value)
+        except OverflowError:
+            raise ConfigError(f"{name}: expected a finite number") from None
     return value
 
 
@@ -229,18 +271,28 @@ def _normalise_mix(name: str, mix: Any) -> Any:
         return mix  # validation reports it
     out: Dict[Any, Any] = {}
     for k, v in mix.items():
-        try:
+        if _is_int(k):
+            key = k
+        elif isinstance(k, str) and re.fullmatch(r"[0-9]+", k.strip()):
             key = int(k)
-        except (TypeError, ValueError):
-            key = k  # validation reports it
+        else:
+            raise ConfigError(f"{name}: difficulty keys must be integers >= 1, got {k!r}")
+        if key in out:
+            raise ConfigError(f"{name}: duplicate normalized difficulty key {key!r}")
         out[key] = v
     return out
 
 
 def config_from_dict(data: Mapping[str, Any], overrides: Optional[Mapping[str, Any]] = None) -> TrainConfig:
-    merged: Dict[str, Any] = dict(data or {})
-    if overrides:
+    if not isinstance(data, Mapping):
+        raise ConfigError("Training config must be a mapping of string keys to values")
+    merged: Dict[str, Any] = dict(data)
+    if overrides is not None:
+        if not isinstance(overrides, Mapping):
+            raise ConfigError("Training overrides must be a mapping of string keys to values")
         merged.update(overrides)
+    if not all(isinstance(key, str) for key in merged):
+        raise ConfigError("Training config keys must be strings")
     by_name = {f.name: f for f in dataclasses.fields(TrainConfig)}
     unknown = sorted(set(merged) - set(by_name))
     if unknown:
@@ -260,8 +312,11 @@ def load_config(path: Union[str, Path], overrides: Optional[Mapping[str, Any]] =
     path = Path(path)
     if not path.is_file():
         raise ConfigError(f"Config file not found: {path}")
-    with path.open(encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = parse_yaml_value(f)
+    except (OSError, UnicodeError, ConfigError) as exc:
+        raise ConfigError(f"Cannot load training config {path}: {exc}") from exc
     if not isinstance(data, dict):
         raise ConfigError(f"{path}: top level must be a mapping of keys to values")
     return config_from_dict(data, overrides)
